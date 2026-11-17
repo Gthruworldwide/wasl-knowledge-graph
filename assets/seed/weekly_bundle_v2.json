@@ -1,0 +1,159 @@
+{
+  "bundleVersion": "2.0",
+  "weekIdentifier": "2026-W46",
+  "generatedAt": "2026-11-17T00:00:00Z",
+  "source": {
+    "title": "Wasl fictional sample data - not real estimates",
+    "sourceType": "JSON_IMPORT"
+  },
+  "entities": [
+    {
+      "id": "demo_athlete_01",
+      "category": "ATHLETE",
+      "name": "Fictional Athlete One",
+      "subtitle": "Fictional demo profile",
+      "nationalityOrOrigin": null,
+      "metadata": {
+        "demoOnly": true,
+        "fictional": true
+      },
+      "snapshot": {
+        "totalNetWorth": 42.0,
+        "currencyUnit": "USD_M",
+        "summaryNote": "Fictional demo value; not a real-world estimate."
+      },
+      "incomeStreams": [
+        {
+          "streamType": "SALARY_CONTRACT",
+          "title": "Demo playing contract",
+          "estimatedAnnualValue": 8.0,
+          "portfolioSharePercent": 60.0
+        },
+        {
+          "streamType": "ENDORSEMENTS_ADS",
+          "title": "Demo sponsorship",
+          "estimatedAnnualValue": 2.0,
+          "portfolioSharePercent": 40.0
+        }
+      ],
+      "relations": [
+        {
+          "targetId": "demo_company_01",
+          "relationType": "SPONSORED_BY",
+          "relationDetail": "Fictional demo relationship."
+        },
+        {
+          "targetId": "demo_property_01",
+          "relationType": "OWNS_PROPERTY",
+          "relationDetail": "Fictional demo asset; not a real ownership claim."
+        }
+      ]
+    },
+    {
+      "id": "demo_artist_01",
+      "category": "ARTIST",
+      "name": "Fictional Artist One",
+      "subtitle": "Fictional demo profile",
+      "nationalityOrOrigin": null,
+      "metadata": {
+        "demoOnly": true,
+        "fictional": true
+      },
+      "snapshot": {
+        "totalNetWorth": 18.5,
+        "currencyUnit": "USD_M",
+        "summaryNote": "Fictional demo value; not a real-world estimate."
+      },
+      "incomeStreams": [
+        {
+          "streamType": "ROYALTIES_STREAMING",
+          "title": "Demo catalog royalties",
+          "estimatedAnnualValue": 1.2,
+          "portfolioSharePercent": 70.0
+        },
+        {
+          "streamType": "TOURS_EVENTS",
+          "title": "Demo live events",
+          "estimatedAnnualValue": 0.8,
+          "portfolioSharePercent": 30.0
+        }
+      ],
+      "relations": [
+        {
+          "targetId": "demo_company_01",
+          "relationType": "OWNS_STAKE",
+          "relationDetail": "Fictional demo relationship."
+        }
+      ]
+    },
+    {
+      "id": "demo_founder_01",
+      "category": "BUSINESS_FIGURE",
+      "name": "Fictional Founder One",
+      "subtitle": "Fictional demo profile",
+      "nationalityOrOrigin": null,
+      "metadata": {
+        "demoOnly": true,
+        "fictional": true
+      },
+      "snapshot": {
+        "totalNetWorth": 65.0,
+        "currencyUnit": "USD_M",
+        "summaryNote": "Fictional demo value; not a real-world estimate."
+      },
+      "incomeStreams": [
+        {
+          "streamType": "BUSINESS_EQUITY",
+          "title": "Demo company equity",
+          "estimatedAnnualValue": 3.5,
+          "portfolioSharePercent": 100.0
+        }
+      ],
+      "relations": [
+        {
+          "targetId": "demo_company_01",
+          "relationType": "OWNS_STAKE",
+          "relationDetail": "Fictional demo relationship."
+        }
+      ]
+    },
+    {
+      "id": "demo_company_01",
+      "category": "COMPANY",
+      "name": "Fictional Northstar Company",
+      "subtitle": "Fictional demo company",
+      "metadata": {
+        "demoOnly": true,
+        "fictional": true
+      },
+      "snapshot": {
+        "totalNetWorth": 120.0,
+        "currencyUnit": "USD_M",
+        "summaryNote": "Fictional demo value; not a real-world estimate."
+      },
+      "incomeStreams": [
+        {
+          "streamType": "BUSINESS_EQUITY",
+          "title": "Demo operating business",
+          "estimatedAnnualValue": 12.0,
+          "portfolioSharePercent": 100.0
+        }
+      ]
+    },
+    {
+      "id": "demo_property_01",
+      "category": "PROPERTY_ASSET",
+      "name": "Fictional Northstar Residence",
+      "subtitle": "Fictional demo property",
+      "metadata": {
+        "demoOnly": true,
+        "fictional": true
+      },
+      "snapshot": {
+        "totalNetWorth": 2.4,
+        "currencyUnit": "USD_M",
+        "summaryNote": "Fictional demo value; not a real-world estimate."
+      }
+    }
+  ]
+}
