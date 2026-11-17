@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/knowledge_store.dart';
+import 'equation_training_page.dart';
 import 'imf_indicators_page.dart';
 import 'wealth_home_page.dart';
 
@@ -142,6 +143,15 @@ class _KnowledgeHomePageState extends State<KnowledgeHomePage> {
               ),
             ),
             icon: const Icon(Icons.insights_outlined),
+          ),
+          IconButton(
+            tooltip: isArabic ? 'تدريب المعادلات' : 'Equation training',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => const EquationTrainingPage(),
+              ),
+            ),
+            icon: const Icon(Icons.calculate_outlined),
           ),
           IconButton(
             tooltip: isArabic ? 'English' : 'العربية',
