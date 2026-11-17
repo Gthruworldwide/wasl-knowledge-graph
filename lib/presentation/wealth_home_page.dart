@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:uuid/uuid.dart';
 
 import '../data/wealth_dao.dart';
 import '../data/wealth_database.dart';
 import '../data/wealth_models.dart';
+import '../data/wealth_mutations.dart';
 import '../data/weekly_bundle_importer.dart';
+import 'entity_editor_sheet.dart';
+import 'imf_indicators_page.dart';
 import 'wealth_profile_page.dart';
 
 class WealthHomePage extends StatefulWidget {
@@ -23,10 +25,9 @@ class WealthHomePage extends StatefulWidget {
 }
 
 class _WealthHomePageState extends State<WealthHomePage> {
-  static const _uuid = Uuid();
-
   late final WealthDatabase _database;
   late final WealthDao _dao;
+  late final WealthMutations _mutations;
   late final WeeklyBundleImporter _importer;
   final _queryController = TextEditingController();
   List<_WealthCardData> _cards = [];
@@ -43,6 +44,7 @@ class _WealthHomePageState extends State<WealthHomePage> {
     super.initState();
     _database = widget.database ?? WealthDatabase();
     _dao = WealthDao(_database);
+    _mutations = WealthMutations(_database);
     _importer = WeeklyBundleImporter(_database);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _reload();
@@ -89,48 +91,31 @@ class _WealthHomePageState extends State<WealthHomePage> {
   Future<_WealthCardData> _loadCard(WealthEntity entity) async {
     final snapshots = await _dao.snapshotsFor(entity.id);
     final streams = await _dao.incomeStreamsFor(entity.id);
+    WeeklySnapshot? latestValued;
+    for (final snapshot in snapshots.reversed) {
+      if (snapshot.totalNetWorth != null) {
+        latestValued = snapshot;
+        break;
+      }
+    }
     return _WealthCardData(
       entity: entity,
-      snapshot: snapshots.isEmpty ? null : snapshots.last,
+      snapshot: latestValued ?? (snapshots.isEmpty ? null : snapshots.last),
       streams: streams,
     );
   }
 
   Future<void> _createEntity() async {
-    final values = await showModalBottomSheet<_NewEntityForm>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => _NewEntitySheet(isArabic: _isArabic),
-    );
-    if (values == null) return;
     try {
-      final now = DateTime.now().toUtc().toIso8601String();
-      final sourceId = _uuid.v4();
-      final entity = WealthEntity(
-        id: _uuid.v4(),
-        category: values.category,
-        name: values.name,
-        subtitle: values.subtitle,
-        nationalityOrOrigin: values.nationalityOrOrigin,
-        sourceId: sourceId,
-        createdAt: now,
-        updatedAt: now,
+      final linkTargets = await _linkTargets();
+      if (!mounted) return;
+      final draft = await showEntityEditor(
+        context,
+        isArabic: _isArabic,
+        linkTargets: linkTargets,
       );
-      final database = await _database.database;
-      await database.transaction((transaction) async {
-        await _dao.upsertSource(
-          WealthSource(
-            id: sourceId,
-            title: values.sourceTitle,
-            url: values.sourceUrl,
-            sourceType: SourceType.manual,
-            lastSyncedAt: now,
-          ),
-          executor: transaction,
-        );
-        await _dao.upsertEntity(entity, executor: transaction);
-      });
+      if (draft == null || !mounted) return;
+      final entity = await _mutations.createEntity(draft);
       await _reload();
       if (mounted) await _openProfile(entity);
     } on Object catch (error) {
@@ -138,7 +123,18 @@ class _WealthHomePageState extends State<WealthHomePage> {
     }
   }
 
-  Future<void> _importBundle({String? jsonText}) async {
+  Future<List<WealthEntity>> _linkTargets() async {
+    final entities = await _dao.searchEntities('');
+    return entities
+        .where(
+          (entity) =>
+              entity.category == EntityCategory.propertyAsset ||
+              entity.category == EntityCategory.company,
+        )
+        .toList();
+  }
+
+  Future<void> _importBundle({String? jsonText, bool isSample = false}) async {
     final text = jsonText ?? await _askForBundle();
     if (text == null || text.trim().isEmpty) return;
     try {
@@ -148,12 +144,27 @@ class _WealthHomePageState extends State<WealthHomePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            _isArabic
-                ? 'تم استيراد ${summary.entityCount} كيان بنجاح.'
-                : 'Imported ${summary.entityCount} entities successfully.',
+            isSample
+                ? (_isArabic
+                      ? 'تم استيراد ${summary.entityCount} كيان من الحزمة التجريبية.'
+                      : 'Imported ${summary.entityCount} entities from the sample pack.')
+                : (_isArabic
+                      ? 'تم استيراد ${summary.entityCount} كيان بنجاح.'
+                      : 'Imported ${summary.entityCount} entities successfully.'),
           ),
         ),
       );
+    } on Object catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _importSamplePack() async {
+    try {
+      final sample = await rootBundle.loadString(
+        'assets/sample_weekly_pack.json',
+      );
+      await _importBundle(jsonText: sample, isSample: true);
     } on Object catch (error) {
       _showError(error);
     }
@@ -244,17 +255,40 @@ class _WealthHomePageState extends State<WealthHomePage> {
       appBar: AppBar(
         title: Text(isArabic ? 'الثروة' : 'Wealth'),
         actions: [
+          IconButton(
+            tooltip: isArabic ? 'مؤشرات صندوق النقد' : 'IMF indicators',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) =>
+                    ImfIndicatorsPage(onLocaleChanged: widget.onLocaleChanged),
+              ),
+            ),
+            icon: const Icon(Icons.public_outlined),
+          ),
           if (_hasEntities)
             PopupMenuButton<String>(
               tooltip: isArabic ? 'المزيد' : 'More',
               onSelected: (value) {
-                if (value == 'import') _importBundle();
+                switch (value) {
+                  case 'import':
+                    _importBundle();
+                  case 'sample':
+                    _importSamplePack();
+                }
               },
               itemBuilder: (context) => [
                 PopupMenuItem(
                   value: 'import',
                   child: Text(
                     isArabic ? 'استيراد JSON أسبوعي' : 'Import Weekly JSON',
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'sample',
+                  child: Text(
+                    isArabic
+                        ? 'استيراد حزمة بيانات تجريبية'
+                        : 'Import Sample Pack',
                   ),
                 ),
               ],
@@ -317,6 +351,7 @@ class _WealthHomePageState extends State<WealthHomePage> {
                   : _EmptyWealthState(
                       isArabic: isArabic,
                       onCreate: _createEntity,
+                      onImportSample: _importSamplePack,
                     ),
             )
           else
@@ -389,6 +424,9 @@ class _CategoryFilters extends StatelessWidget {
       Padding(
         padding: const EdgeInsetsDirectional.only(end: 8),
         child: FilterChip(
+          key: ValueKey<String>(
+            'wealth-category-filter-${category?.value ?? 'ALL'}',
+          ),
           label: Text(label),
           selected: selected == category,
           onSelected: (_) => onChanged(category),
@@ -410,10 +448,15 @@ class _WealthEntityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final snapshot = data.snapshot;
-    final streams = data.streams
-        .where((stream) => stream.portfolioSharePercent != null)
-        .take(2)
-        .toList();
+    final streams =
+        data.streams
+            .where((stream) => stream.portfolioSharePercent != null)
+            .toList()
+          ..sort(
+            (a, b) =>
+                b.portfolioSharePercent!.compareTo(a.portfolioSharePercent!),
+          );
+    final topStreams = streams.take(2).toList();
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -469,13 +512,13 @@ class _WealthEntityCard extends StatelessWidget {
                     _ChangeBadge(change: snapshot!.wowChangePercent!),
                 ],
               ),
-              if (streams.isNotEmpty) ...[
+              if (topStreams.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   children: [
-                    for (final stream in streams)
+                    for (final stream in topStreams)
                       Chip(
                         visualDensity: VisualDensity.compact,
                         label: Text(
@@ -544,39 +587,61 @@ class _ChangeBadge extends StatelessWidget {
 }
 
 class _EmptyWealthState extends StatelessWidget {
-  const _EmptyWealthState({required this.isArabic, required this.onCreate});
+  const _EmptyWealthState({
+    required this.isArabic,
+    required this.onCreate,
+    required this.onImportSample,
+  });
 
   final bool isArabic;
   final VoidCallback onCreate;
+  final VoidCallback onImportSample;
 
   @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
       padding: const EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.hub_outlined, size: 64),
-          const SizedBox(height: 16),
-          Text(
-            isArabic ? 'ابدأ مساحة معرفتك بإضافة أول كيان ومصدره.' : 'Start your knowledge space by adding an entity and its source.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: (constraints.maxHeight - 64).clamp(0, double.infinity),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.hub_outlined, size: 64),
+              const SizedBox(height: 16),
+              Text(
+                isArabic ? 'ابدأ مساحة معرفتك بإضافة أول كيان ومصدره.' : 'Start your knowledge space by adding an entity and its source.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                isArabic
+                    ? 'ستبقى بياناتك محفوظة على هذا الجهاز فقط.'
+                    : 'Everything you add stays on this device.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: onCreate,
+                icon: const Icon(Icons.add),
+                label: Text(isArabic ? 'إضافة كيان' : 'Add entity'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: onImportSample,
+                icon: const Icon(Icons.download_outlined),
+                label: Text(
+                  isArabic
+                      ? 'استيراد حزمة بيانات تجريبية'
+                      : 'Import Sample Pack',
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            isArabic
-                ? 'ستبقى بياناتك محفوظة على هذا الجهاز فقط.'
-                : 'Everything you add stays on this device.',
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: onCreate,
-            icon: const Icon(Icons.add),
-            label: Text(isArabic ? 'إضافة كيان' : 'Add entity'),
-          ),
-        ],
+        ),
       ),
     ),
   );
@@ -601,184 +666,6 @@ class _NoWealthResults extends StatelessWidget {
       ],
     ),
   );
-}
-
-class _NewEntityForm {
-  const _NewEntityForm({
-    required this.category,
-    required this.name,
-    required this.sourceTitle,
-    this.subtitle,
-    this.nationalityOrOrigin,
-    this.sourceUrl,
-  });
-
-  final EntityCategory category;
-  final String name;
-  final String sourceTitle;
-  final String? subtitle;
-  final String? nationalityOrOrigin;
-  final String? sourceUrl;
-}
-
-class _NewEntitySheet extends StatefulWidget {
-  const _NewEntitySheet({required this.isArabic});
-
-  final bool isArabic;
-
-  @override
-  State<_NewEntitySheet> createState() => _NewEntitySheetState();
-}
-
-class _NewEntitySheetState extends State<_NewEntitySheet> {
-  final _formKey = GlobalKey<FormState>();
-  final _name = TextEditingController();
-  final _subtitle = TextEditingController();
-  final _origin = TextEditingController();
-  final _sourceTitle = TextEditingController();
-  final _sourceUrl = TextEditingController();
-  EntityCategory? _category;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _subtitle.dispose();
-    _origin.dispose();
-    _sourceTitle.dispose();
-    _sourceUrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isArabic = widget.isArabic;
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          4,
-          20,
-          MediaQuery.viewInsetsOf(context).bottom + 20,
-        ),
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  isArabic ? 'كيان جديد' : 'New entity',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<EntityCategory>(
-                  decoration: InputDecoration(
-                    labelText: isArabic ? 'الفئة' : 'Category',
-                  ),
-                  items: [
-                    for (final category in EntityCategory.values)
-                      DropdownMenuItem(
-                        value: category,
-                        child: Text(_categoryLabel(category, isArabic)),
-                      ),
-                  ],
-                  onChanged: (value) => setState(() => _category = value),
-                  validator: (value) => value == null
-                      ? (isArabic ? 'اختر فئة' : 'Choose a category')
-                      : null,
-                ),
-                _textField(_name, isArabic ? 'الاسم' : 'Name', required: true),
-                _textField(
-                  _subtitle,
-                  isArabic ? 'وصف مختصر (اختياري)' : 'Subtitle (optional)',
-                ),
-                _textField(
-                  _origin,
-                  isArabic ? 'الدولة أو المنشأ (اختياري)' : 'Origin (optional)',
-                ),
-                _textField(
-                  _sourceTitle,
-                  isArabic ? 'عنوان المصدر' : 'Source title',
-                  required: true,
-                  initialValue: isArabic ? 'إدخال يدوي' : 'Manual entry',
-                ),
-                _textField(
-                  _sourceUrl,
-                  isArabic ? 'رابط المصدر (اختياري)' : 'Source URL (optional)',
-                  keyboardType: TextInputType.url,
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () {
-                    if (!_formKey.currentState!.validate()) return;
-                    Navigator.pop(
-                      context,
-                      _NewEntityForm(
-                        category: _category!,
-                        name: _name.text.trim(),
-                        subtitle: _nullable(_subtitle.text),
-                        nationalityOrOrigin: _nullable(_origin.text),
-                        sourceTitle: _sourceTitle.text.trim(),
-                        sourceUrl: _nullable(_sourceUrl.text),
-                      ),
-                    );
-                  },
-                  child: Text(isArabic ? 'حفظ الكيان' : 'Save entity'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _textField(
-    TextEditingController controller,
-    String label, {
-    bool required = false,
-    String? initialValue,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    if (initialValue != null && controller.text.isEmpty) {
-      controller.text = initialValue;
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        decoration: InputDecoration(labelText: label),
-        validator: (value) {
-          final normalized = value?.trim() ?? '';
-          if (required && normalized.isEmpty) {
-            return widget.isArabic ? 'هذا الحقل مطلوب' : 'Required';
-          }
-          if (keyboardType == TextInputType.url &&
-              normalized.isNotEmpty &&
-              !_isHttpUrl(normalized)) {
-            return widget.isArabic
-                ? 'أدخل رابط HTTP أو HTTPS صالحًا'
-                : 'Enter a valid http or https URL';
-          }
-          return null;
-        },
-      ),
-    );
-  }
-}
-
-String? _nullable(String value) {
-  final normalized = value.trim();
-  return normalized.isEmpty ? null : normalized;
-}
-
-bool _isHttpUrl(String value) {
-  final uri = Uri.tryParse(value);
-  return uri != null &&
-      const {'http', 'https'}.contains(uri.scheme.toLowerCase()) &&
-      uri.host.isNotEmpty;
 }
 
 String _categoryLabel(EntityCategory category, bool isArabic) =>

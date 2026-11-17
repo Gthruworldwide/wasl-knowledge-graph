@@ -16,7 +16,7 @@ class WealthDatabase {
     final opened = await _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 5,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _createSchema,
         onUpgrade: _upgradeSchema,
@@ -123,6 +123,50 @@ class WealthDatabase {
     await db.execute(
       'CREATE INDEX idx_relations_to ON entity_relations(to_entity_id)',
     );
+    await _createImfObservations(db);
+    await _createFmpMarketContext(db);
+  }
+
+  Future<void> _createImfObservations(Database db) async {
+    await db.execute('''
+      CREATE TABLE imf_observations (
+        id TEXT PRIMARY KEY NOT NULL,
+        country_code TEXT NOT NULL,
+        country_name TEXT NOT NULL,
+        series_key TEXT NOT NULL,
+        period TEXT NOT NULL,
+        value REAL NOT NULL,
+        unit TEXT NOT NULL,
+        frequency TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        UNIQUE(country_code, series_key, period)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_imf_observations_country_period '
+      'ON imf_observations(country_code, period)',
+    );
+  }
+
+  Future<void> _createFmpMarketContext(Database db) async {
+    await db.execute('''
+      CREATE TABLE fmp_market_context (
+        kind TEXT NOT NULL CHECK (kind IN ('CPI', 'INDEX_QUOTE')),
+        symbol TEXT NOT NULL,
+        label TEXT NOT NULL,
+        value REAL NOT NULL,
+        change_percent REAL,
+        period TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        UNIQUE(kind, symbol, period)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_fmp_context_kind_symbol '
+      'ON fmp_market_context(kind, symbol)',
+    );
   }
 
   Future<void> _upgradeSchema(
@@ -143,6 +187,12 @@ class WealthDatabase {
         'ALTER TABLE entity_relations ADD COLUMN valid_from TEXT',
       );
       await db.execute('ALTER TABLE entity_relations ADD COLUMN valid_to TEXT');
+    }
+    if (oldVersion < 4) {
+      await _createImfObservations(db);
+    }
+    if (oldVersion < 5) {
+      await _createFmpMarketContext(db);
     }
   }
 }

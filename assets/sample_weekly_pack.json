@@ -1,0 +1,309 @@
+{
+  "bundleVersion": "2.0",
+  "weekIdentifier": "2026-W46",
+  "generatedAt": "2026-11-17T00:00:00Z",
+  "source": {
+    "title": "Wasl Sample Weekly Pack - W46 (fictional demo data)",
+    "sourceType": "JSON_IMPORT"
+  },
+  "entities": [
+    {
+      "id": "sample_athlete_karim",
+      "category": "ATHLETE",
+      "name": "Karim Al-Farsi",
+      "subtitle": "Football • Al-Noor FC & UAE national team",
+      "nationalityOrOrigin": "UAE",
+      "metadata": {
+        "sport": "Football",
+        "position": "Attacking midfielder",
+        "club": "Al-Noor FC",
+        "marketValueUSD_M": 62.0
+      },
+      "snapshots": [
+        {
+          "weekIdentifier": "2026-W42",
+          "totalNetWorth": 178.2,
+          "currencyUnit": "USD_M",
+          "summaryNote": "Pre-season bonuses and a new regional banking campaign landed."
+        },
+        {
+          "weekIdentifier": "2026-W43",
+          "totalNetWorth": 180.0,
+          "currencyUnit": "USD_M",
+          "summaryNote": "Club appearance fees and the match-day revenue share lifted the weekly total."
+        },
+        {
+          "weekIdentifier": "2026-W44",
+          "totalNetWorth": 181.5,
+          "currencyUnit": "USD_M",
+          "summaryNote": "Training-ground sponsorship inventory sold out for the season."
+        },
+        {
+          "weekIdentifier": "2026-W45",
+          "totalNetWorth": 183.9,
+          "currencyUnit": "USD_M",
+          "summaryNote": "A national-team call-up triggered an endorsement performance bonus."
+        },
+        {
+          "weekIdentifier": "2026-W46",
+          "totalNetWorth": 186.4,
+          "currencyUnit": "USD_M",
+          "summaryNote": "The regional media-rights package revaluation added to the weekly estimate."
+        }
+      ],
+      "incomeStreams": [
+        {
+          "streamType": "SALARY_CONTRACT",
+          "title": "Al-Noor FC playing contract",
+          "estimatedAnnualValue": 34.0,
+          "portfolioSharePercent": 45.0
+        },
+        {
+          "streamType": "ENDORSEMENTS_ADS",
+          "title": "Banking and sportswear endorsements",
+          "estimatedAnnualValue": 28.0,
+          "portfolioSharePercent": 30.0
+        },
+        {
+          "streamType": "BUSINESS_EQUITY",
+          "title": "Sports academy and hospitality venture",
+          "estimatedAnnualValue": 16.0,
+          "portfolioSharePercent": 25.0
+        }
+      ],
+      "relations": [
+        {
+          "targetId": "sample_property_azure_palm",
+          "relationType": "OWNS_PROPERTY",
+          "relationDetail": "100% ownership • Est. $38.5M"
+        },
+        {
+          "targetId": "sample_company_meridian",
+          "relationType": "SPONSORED_BY",
+          "relationDetail": "Global ambassador • 8-year agreement"
+        },
+        {
+          "targetId": "sample_news_media_rights",
+          "relationType": "IMPACTED_BY_NEWS",
+          "relationDetail": "Media-rights revaluation lifts endorsement upside"
+        }
+      ]
+    },
+    {
+      "id": "sample_artist_layla",
+      "category": "ARTIST",
+      "name": "Layla Nasser",
+      "subtitle": "Pop • Singer-songwriter and producer",
+      "nationalityOrOrigin": "Lebanon",
+      "metadata": {
+        "genre": "Pop",
+        "label": "Cedar Sound Records",
+        "tour": "Coastline Tour 2026"
+      },
+      "snapshots": [
+        {
+          "weekIdentifier": "2026-W42",
+          "totalNetWorth": 84.6,
+          "currencyUnit": "USD_M",
+          "summaryNote": "Catalog streaming royalties beat the prior four-week average."
+        },
+        {
+          "weekIdentifier": "2026-W43",
+          "totalNetWorth": 86.1,
+          "currencyUnit": "USD_M",
+          "summaryNote": "Two arena dates were added to the regional tour."
+        },
+        {
+          "weekIdentifier": "2026-W44",
+          "totalNetWorth": 88.4,
+          "currencyUnit": "USD_M",
+          "summaryNote": "A brand-collaboration capsule sold through in 48 hours."
+        },
+        {
+          "weekIdentifier": "2026-W45",
+          "totalNetWorth": 90.2,
+          "currencyUnit": "USD_M",
+          "summaryNote": "A sync-licensing placement debuted on a streaming series."
+        },
+        {
+          "weekIdentifier": "2026-W46",
+          "totalNetWorth": 92.8,
+          "currencyUnit": "USD_M",
+          "summaryNote": "Tour merchandise and ticketing closed the week strongly."
+        }
+      ],
+      "incomeStreams": [
+        {
+          "streamType": "ROYALTIES_STREAMING",
+          "title": "Master recordings and publishing catalog",
+          "estimatedAnnualValue": 18.0,
+          "portfolioSharePercent": 50.0
+        },
+        {
+          "streamType": "TOURS_EVENTS",
+          "title": "Coastline Tour tickets and merchandise",
+          "estimatedAnnualValue": 12.0,
+          "portfolioSharePercent": 35.0
+        },
+        {
+          "streamType": "REAL_ESTATE",
+          "title": "Studio and residential property portfolio",
+          "estimatedAnnualValue": 3.0,
+          "portfolioSharePercent": 15.0
+        }
+      ],
+      "relations": [
+        {
+          "targetId": "sample_company_meridian",
+          "relationType": "SPONSORED_BY",
+          "relationDetail": "Tour sponsor • 2-year deal"
+        },
+        {
+          "targetId": "sample_company_meridian",
+          "relationType": "OWNS_STAKE",
+          "relationDetail": "4% equity stake in Meridian Live"
+        }
+      ]
+    },
+    {
+      "id": "sample_company_meridian",
+      "category": "COMPANY",
+      "name": "Meridian Sports & Entertainment Group",
+      "subtitle": "Sportswear, media rights and live events",
+      "nationalityOrOrigin": "UAE",
+      "metadata": {
+        "sector": "Sports and entertainment",
+        "headquarters": "Dubai",
+        "segments": ["Sportswear", "Media rights", "Live events"]
+      },
+      "snapshots": [
+        {
+          "weekIdentifier": "2026-W42",
+          "totalNetWorth": 2.15,
+          "currencyUnit": "USD_B",
+          "summaryNote": "Direct-to-consumer margins improved ahead of the quarterly close."
+        },
+        {
+          "weekIdentifier": "2026-W43",
+          "totalNetWorth": 2.2,
+          "currencyUnit": "USD_B",
+          "summaryNote": "Two regional club licensing agreements were renewed."
+        },
+        {
+          "weekIdentifier": "2026-W44",
+          "totalNetWorth": 2.26,
+          "currencyUnit": "USD_B",
+          "summaryNote": "Sportswear sell-through rose on the new training collection."
+        },
+        {
+          "weekIdentifier": "2026-W45",
+          "totalNetWorth": 2.33,
+          "currencyUnit": "USD_B",
+          "summaryNote": "Live-events ticketing inventory reached a seasonal high."
+        },
+        {
+          "weekIdentifier": "2026-W46",
+          "totalNetWorth": 2.4,
+          "currencyUnit": "USD_B",
+          "summaryNote": "The record media-rights package expanded the broadcast pipeline."
+        }
+      ],
+      "incomeStreams": [
+        {
+          "streamType": "BUSINESS_EQUITY",
+          "title": "Sportswear and licensing operations",
+          "estimatedAnnualValue": 210.0,
+          "portfolioSharePercent": 60.0
+        },
+        {
+          "streamType": "TOURS_EVENTS",
+          "title": "Stadium events and hospitality",
+          "estimatedAnnualValue": 140.0,
+          "portfolioSharePercent": 40.0
+        }
+      ],
+      "relations": [
+        {
+          "targetId": "sample_news_media_rights",
+          "relationType": "IMPACTED_BY_NEWS",
+          "relationDetail": "Broadcast package expands the live-events pipeline"
+        }
+      ]
+    },
+    {
+      "id": "sample_property_azure_palm",
+      "category": "PROPERTY_ASSET",
+      "name": "Azure Palm Villa",
+      "subtitle": "Luxury waterfront estate • Palm Jumeirah, Dubai",
+      "nationalityOrOrigin": "UAE",
+      "metadata": {
+        "propertyType": "Waterfront villa",
+        "bedrooms": 7,
+        "location": "Palm Jumeirah, Dubai",
+        "annualRentalYieldPercent": 3.6
+      },
+      "snapshots": [
+        {
+          "weekIdentifier": "2026-W42",
+          "totalNetWorth": 36.0,
+          "currencyUnit": "USD_M",
+          "summaryNote": "Independent valuation confirmed the post-renovation floor."
+        },
+        {
+          "weekIdentifier": "2026-W43",
+          "totalNetWorth": 36.4,
+          "currencyUnit": "USD_M",
+          "summaryNote": "Comparable waterfront sales nudged the estimate higher."
+        },
+        {
+          "weekIdentifier": "2026-W44",
+          "totalNetWorth": 37.1,
+          "currencyUnit": "USD_M",
+          "summaryNote": "The managed rental programme reached full seasonal occupancy."
+        },
+        {
+          "weekIdentifier": "2026-W45",
+          "totalNetWorth": 37.8,
+          "currencyUnit": "USD_M",
+          "summaryNote": "A neighbouring plot sale lifted local price benchmarks."
+        },
+        {
+          "weekIdentifier": "2026-W46",
+          "totalNetWorth": 38.5,
+          "currencyUnit": "USD_M",
+          "summaryNote": "The estate's rental income and valuation were marked up for the week."
+        }
+      ],
+      "incomeStreams": [
+        {
+          "streamType": "REAL_ESTATE",
+          "title": "Managed short-term rental programme",
+          "estimatedAnnualValue": 1.4,
+          "portfolioSharePercent": 100.0
+        }
+      ]
+    },
+    {
+      "id": "sample_news_media_rights",
+      "category": "ECONOMIC_NEWS",
+      "name": "Gulf sports media rights reach a record $1.4B package",
+      "subtitle": "Economic update • Sports broadcasting",
+      "nationalityOrOrigin": "UAE",
+      "metadata": {
+        "impact": "Media rights revaluation",
+        "region": "GCC",
+        "affectedSectors": ["Sports", "Media", "Entertainment"]
+      },
+      "snapshots": [
+        {
+          "weekIdentifier": "2026-W45",
+          "summaryNote": "Broadcasters opened bidding for the next three-season rights cycle."
+        },
+        {
+          "weekIdentifier": "2026-W46",
+          "summaryNote": "The winning package set a regional record and raised club and endorsement revenue expectations."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+name: finance_lab CI (Wasl feature)
+
+# يعمل على push و pull_request فقط.
+# توافق Buildkite مع GitHub Actions (preview) لا يدعم أحداث schedule.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finance-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: finance_lab
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python 3.13
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: |
+            finance_lab/uv.lock
+            finance_lab/pyproject.toml
+
+      - name: Sync locked dependencies
+        run: uv sync --python 3.13 --locked
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Fetch market data and build outputs
+        run: uv run python scripts/quickstart.py
+
+      - name: Upload generated outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: finance-lab-output
+          path: finance_lab/output/
+          if-no-files-found: error

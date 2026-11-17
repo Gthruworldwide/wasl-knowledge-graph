@@ -109,6 +109,19 @@ class WealthDao {
     );
   }
 
+  Future<void> deleteIncomeStream(
+    String id, {
+    DatabaseExecutor? executor,
+  }) async {
+    final db = executor ?? await _wealthDatabase.database;
+    await db.delete('income_streams', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteRelation(String id, {DatabaseExecutor? executor}) async {
+    final db = executor ?? await _wealthDatabase.database;
+    await db.delete('entity_relations', where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<WealthEntity?> getEntity(
     String id, {
     DatabaseExecutor? executor,

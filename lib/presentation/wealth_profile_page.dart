@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import '../data/wealth_dao.dart';
 import '../data/wealth_database.dart';
 import '../data/wealth_models.dart';
+import '../data/wealth_mutations.dart';
+import 'entity_editor_sheet.dart';
+import 'weekly_update_sheet.dart';
 
 class WealthProfilePage extends StatefulWidget {
   const WealthProfilePage({
@@ -22,6 +25,7 @@ class WealthProfilePage extends StatefulWidget {
 
 class _WealthProfilePageState extends State<WealthProfilePage> {
   late final WealthDao _dao = WealthDao(widget.database);
+  late final WealthMutations _mutations = WealthMutations(widget.database);
   _WealthProfileData? _data;
   String? _error;
   bool _loading = true;
@@ -67,6 +71,18 @@ class _WealthProfilePageState extends State<WealthProfilePage> {
       final sourceResults = await Future.wait(
         sourceIds.map((id) async => MapEntry(id, await _dao.getSource(id))),
       );
+      final newsWeeks = <String, String>{};
+      for (final result in relatedResults) {
+        final related = result.value;
+        if (related == null ||
+            related.category != EntityCategory.economicNews) {
+          continue;
+        }
+        final newsSnapshots = await _dao.snapshotsFor(related.id);
+        if (newsSnapshots.isNotEmpty) {
+          newsWeeks[related.id] = newsSnapshots.last.weekIdentifier;
+        }
+      }
       final data = _WealthProfileData(
         entity: entity,
         snapshots: snapshots,
@@ -80,6 +96,7 @@ class _WealthProfilePageState extends State<WealthProfilePage> {
           for (final result in sourceResults)
             if (result.value != null) result.key: result.value!,
         },
+        latestNewsWeeks: newsWeeks,
       );
       if (!mounted) return;
       setState(() {
@@ -96,6 +113,91 @@ class _WealthProfilePageState extends State<WealthProfilePage> {
     }
   }
 
+  Future<void> _edit() async {
+    final data = _data;
+    if (data == null) return;
+    try {
+      final allEntities = await _dao.searchEntities('');
+      final initialLinks = data.relations
+          .where(
+            (relation) =>
+                relation.fromEntityId == data.entity.id &&
+                (relation.relationType == EntityRelationType.ownsProperty ||
+                    relation.relationType == EntityRelationType.ownsStake),
+          )
+          .toList();
+      final linkTargets = allEntities
+          .where(
+            (entity) =>
+                entity.id != data.entity.id &&
+                (entity.category == EntityCategory.propertyAsset ||
+                    entity.category == EntityCategory.company ||
+                    initialLinks.any((link) => link.toEntityId == entity.id)),
+          )
+          .toList();
+      if (!mounted) return;
+      final draft = await showEntityEditor(
+        context,
+        isArabic: _isArabic,
+        entity: data.entity,
+        source: data.entity.sourceId == null
+            ? null
+            : data.sources[data.entity.sourceId],
+        incomeStreams: data.streams,
+        links: initialLinks,
+        linkTargets: linkTargets,
+      );
+      if (draft == null || !mounted) return;
+      await _mutations.updateEntity(
+        entity: data.entity,
+        draft: draft,
+        previousStreams: data.streams,
+        previousLinks: initialLinks,
+      );
+      await _reload();
+    } on Object catch (error) {
+      _showError(error);
+    }
+  }
+
+  Future<void> _addWeeklyUpdate() async {
+    final data = _data;
+    if (data == null || !mounted) return;
+    final draft = await showWeeklyUpdateSheet(
+      context,
+      isArabic: _isArabic,
+      existingWeeks: {
+        for (final snapshot in data.snapshots) snapshot.weekIdentifier,
+      },
+    );
+    if (draft == null || !mounted) return;
+    try {
+      await _mutations.addSnapshot(
+        entity: data.entity,
+        weekIdentifier: draft.weekIdentifier,
+        currencyUnit: draft.currencyUnit,
+        totalNetWorth: draft.totalNetWorth,
+        summaryNote: draft.summaryNote,
+      );
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isArabic ? 'تم حفظ التحديث الأسبوعي.' : 'Weekly update saved.',
+          ),
+        ),
+      );
+    } on Object catch (error) {
+      _showError(error);
+    }
+  }
+
+  void _showError(Object error) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(error.toString())));
+  }
+
   @override
   Widget build(BuildContext context) {
     final isArabic = _isArabic;
@@ -105,6 +207,15 @@ class _WealthProfilePageState extends State<WealthProfilePage> {
         title: Text(
           data?.entity.name ?? (isArabic ? 'الملف الشخصي' : 'Profile'),
         ),
+        actions: data == null
+            ? null
+            : [
+                IconButton(
+                  tooltip: isArabic ? 'تعديل الكيان' : 'Edit entity',
+                  onPressed: _edit,
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+              ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -117,16 +228,33 @@ class _WealthProfilePageState extends State<WealthProfilePage> {
               ),
             )
           : _buildProfile(data, isArabic),
+      floatingActionButton: _loading || _error != null || data == null
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _addWeeklyUpdate,
+              icon: const Icon(Icons.add_chart),
+              label: Text(
+                isArabic ? 'إضافة تحديث أسبوعي' : 'Add weekly update',
+              ),
+            ),
     );
   }
 
   Widget _buildProfile(_WealthProfileData data, bool isArabic) {
-    final latest = data.snapshots.isEmpty ? null : data.snapshots.last;
+    WeeklySnapshot? latestValued;
+    for (final snapshot in data.snapshots.reversed) {
+      if (snapshot.totalNetWorth != null) {
+        latestValued = snapshot;
+        break;
+      }
+    }
+    final latest =
+        latestValued ?? (data.snapshots.isEmpty ? null : data.snapshots.last);
     final currentSource = data.entity.sourceId == null
         ? null
         : data.sources[data.entity.sourceId];
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
       children: [
         _SectionTitle(isArabic ? 'ملخص الثروة' : 'Wealth summary'),
         Card(
@@ -171,7 +299,7 @@ class _WealthProfilePageState extends State<WealthProfilePage> {
                   ),
                 ],
                 const SizedBox(height: 16),
-                if (data.snapshots.length > 1)
+                if (data.snapshots.length > 1) ...[
                   SizedBox(
                     height: 170,
                     width: double.infinity,
@@ -187,8 +315,10 @@ class _WealthProfilePageState extends State<WealthProfilePage> {
                             : 'Chart of net worth over recorded weeks',
                       ),
                     ),
-                  )
-                else
+                  ),
+                  const SizedBox(height: 6),
+                  _WeekAxis(snapshots: data.snapshots),
+                ] else
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Text(
@@ -256,47 +386,118 @@ class _WealthProfilePageState extends State<WealthProfilePage> {
         _SectionTitle(
           isArabic ? 'التحديثات الأسبوعية والأخبار' : 'Weekly updates & news',
         ),
-        if (data.snapshots.every(
-          (snapshot) => (snapshot.summaryNote?.isNotEmpty ?? false) == false,
-        ))
-          _NoRecords(
-            isArabic
-                ? 'لا توجد تحديثات أسبوعية بعد.'
-                : 'No weekly updates recorded yet.',
-          )
-        else
-          for (final snapshot in data.snapshots.reversed)
-            if (snapshot.summaryNote?.isNotEmpty ?? false)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        snapshot.weekIdentifier,
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(snapshot.summaryNote!),
-                      if (data.sources[snapshot.sourceId] case final source?)
-                        _SourceCitation(source: source, isArabic: isArabic),
-                    ],
-                  ),
-                ),
-              ),
-        ..._buildRelations(
-          data,
-          const {
-            EntityRelationType.impactedByNews,
-            EntityRelationType.sponsoredBy,
-            EntityRelationType.playsFor,
-          },
-          isArabic,
-          sectionTitle: null,
-        ),
+        ..._buildTimeline(data, isArabic),
+        if (data.relations.any(
+          (relation) =>
+              relation.relationType == EntityRelationType.sponsoredBy ||
+              relation.relationType == EntityRelationType.playsFor,
+        )) ...[
+          const SizedBox(height: 20),
+          _SectionTitle(
+            isArabic ? 'الرعاية والانتماءات' : 'Sponsorships & affiliations',
+          ),
+          ..._buildRelations(
+            data,
+            const {EntityRelationType.sponsoredBy, EntityRelationType.playsFor},
+            isArabic,
+            sectionTitle: null,
+          ),
+        ],
       ],
     );
+  }
+
+  List<Widget> _buildTimeline(_WealthProfileData data, bool isArabic) {
+    final entries = <_TimelineEntry>[];
+    for (final snapshot in data.snapshots) {
+      final note = snapshot.summaryNote;
+      if (note == null || note.isEmpty) continue;
+      entries.add(
+        _TimelineEntry(
+          week: snapshot.weekIdentifier,
+          title: isArabic ? 'تحديث أسبوعي' : 'Weekly update',
+          detail: note,
+          source: data.sources[snapshot.sourceId],
+        ),
+      );
+    }
+    for (final relation in data.relations) {
+      if (relation.relationType != EntityRelationType.impactedByNews) {
+        continue;
+      }
+      final relatedId = relation.fromEntityId == data.entity.id
+          ? relation.toEntityId
+          : relation.fromEntityId;
+      final news = data.relatedEntities[relatedId];
+      if (news == null || news.category != EntityCategory.economicNews) {
+        continue;
+      }
+      final source = relation.sourceId == null
+          ? null
+          : data.sources[relation.sourceId];
+      entries.add(
+        _TimelineEntry(
+          week: data.latestNewsWeeks[news.id],
+          title: news.name,
+          detail: relation.relationDetail ?? news.subtitle,
+          source:
+              source ??
+              (news.sourceId == null ? null : data.sources[news.sourceId]),
+        ),
+      );
+    }
+    entries.sort((a, b) => _timelineSortKey(b).compareTo(_timelineSortKey(a)));
+    if (entries.isEmpty) {
+      return [
+        _NoRecords(
+          isArabic
+              ? 'لا توجد تحديثات أسبوعية بعد.'
+              : 'No weekly updates recorded yet.',
+        ),
+      ];
+    }
+    return [
+      for (final entry in entries)
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.title,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    if (entry.week != null) ...[
+                      const SizedBox(width: 8),
+                      _CategoryBadge(label: entry.week!),
+                    ],
+                  ],
+                ),
+                if (entry.detail != null) ...[
+                  const SizedBox(height: 6),
+                  Text(entry.detail!),
+                ],
+                if (entry.source != null)
+                  _SourceCitation(source: entry.source!, isArabic: isArabic),
+              ],
+            ),
+          ),
+        ),
+    ];
+  }
+
+  String _timelineSortKey(_TimelineEntry entry) {
+    final week = entry.week;
+    if (week == null || !RegExp(r'^\d{4}-W\d{2}$').hasMatch(week)) {
+      return '';
+    }
+    return week;
   }
 
   List<Widget> _buildRelations(
@@ -377,6 +578,7 @@ class _WealthProfileData {
     required this.relations,
     required this.relatedEntities,
     required this.sources,
+    required this.latestNewsWeeks,
   });
 
   final WealthEntity entity;
@@ -385,6 +587,43 @@ class _WealthProfileData {
   final List<EntityRelation> relations;
   final Map<String, WealthEntity> relatedEntities;
   final Map<String, WealthSource> sources;
+  final Map<String, String> latestNewsWeeks;
+}
+
+class _TimelineEntry {
+  const _TimelineEntry({
+    required this.title,
+    this.week,
+    this.detail,
+    this.source,
+  });
+
+  final String title;
+  final String? week;
+  final String? detail;
+  final WealthSource? source;
+}
+
+class _WeekAxis extends StatelessWidget {
+  const _WeekAxis({required this.snapshots});
+
+  final List<WeeklySnapshot> snapshots;
+
+  @override
+  Widget build(BuildContext context) {
+    final labels = snapshots.length <= 3
+        ? snapshots
+        : [snapshots.first, snapshots[snapshots.length ~/ 2], snapshots.last];
+    final style = Theme.of(context).textTheme.labelSmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        for (final snapshot in labels)
+          Text(snapshot.weekIdentifier, style: style),
+      ],
+    );
+  }
 }
 
 class _SourceCitation extends StatelessWidget {

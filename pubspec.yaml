@@ -39,6 +39,7 @@ dependencies:
   sqflite: ^2.4.6
   path: ^1.9.1
   uuid: ^4.6.0
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -52,6 +53,16 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   sqflite_common_ffi: ^2.4.7
 
+# `package:sqlite3` is only used by the FFI test database; the app itself uses
+# `sqflite` (platform SQLite). Reuse the operating system's SQLite instead of
+# downloading prebuilt binaries during builds.
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
+      name_windows: winsqlite3
+      name_android: sqlite
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -64,6 +75,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/seed/weekly_bundle_v2.json
+    - assets/sample_weekly_pack.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:

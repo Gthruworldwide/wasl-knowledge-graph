@@ -133,6 +133,179 @@ void main() {
     expect(await db.query('entity_relations'), hasLength(4));
   });
 
+  test('sample weekly pack imports multi-week history and relations', () async {
+    final database = await newDatabase();
+    addTearDown(database.close);
+    final weeklyImporter = WeeklyBundleImporter(database);
+    final bundleJson = await rootBundle.loadString(
+      'assets/sample_weekly_pack.json',
+    );
+
+    final summary = await weeklyImporter.importBundle(bundleJson);
+    expect(summary.entityCount, 5);
+    expect(summary.snapshotCount, 22);
+    expect(summary.incomeStreamCount, 9);
+    expect(summary.relationCount, 6);
+
+    final dao = WealthDao(database);
+    final athlete = await dao.getEntity('sample_athlete_karim');
+    expect(athlete?.category, EntityCategory.athlete);
+    final athleteSnapshots = await dao.snapshotsFor(athlete!.id);
+    expect(athleteSnapshots.map((snapshot) => snapshot.weekIdentifier), [
+      '2026-W42',
+      '2026-W43',
+      '2026-W44',
+      '2026-W45',
+      '2026-W46',
+    ]);
+    expect(athleteSnapshots.first.wowChangePercent, isNull);
+    expect(
+      athleteSnapshots.last.wowChangePercent,
+      closeTo((186.4 - 183.9) / 183.9 * 100, 0.0001),
+    );
+
+    final athleteRelations = await dao.relationsFor(athlete.id);
+    expect(
+      athleteRelations.map((relation) => relation.relationType),
+      containsAll([
+        EntityRelationType.ownsProperty,
+        EntityRelationType.sponsoredBy,
+        EntityRelationType.impactedByNews,
+      ]),
+    );
+    expect(
+      athleteRelations
+          .where(
+            (relation) =>
+                relation.relationType == EntityRelationType.ownsProperty,
+          )
+          .single
+          .toEntityId,
+      'sample_property_azure_palm',
+    );
+
+    final news = await dao.getEntity('sample_news_media_rights');
+    expect(news?.category, EntityCategory.economicNews);
+    final newsSnapshots = await dao.snapshotsFor(news!.id);
+    expect(newsSnapshots, hasLength(2));
+    expect(
+      newsSnapshots.every((snapshot) => snapshot.totalNetWorth == null),
+      isTrue,
+    );
+
+    final repeatedSummary = await weeklyImporter.importBundle(bundleJson);
+    expect(repeatedSummary.sourceId, summary.sourceId);
+    final db = await database.database;
+    expect(await db.query('entities'), hasLength(5));
+    expect(await db.query('weekly_snapshots'), hasLength(22));
+    expect(await db.query('income_streams'), hasLength(9));
+    expect(await db.query('entity_relations'), hasLength(6));
+  });
+
+  test('rejects duplicate snapshot weeks for one entity', () async {
+    final database = await newDatabase();
+    addTearDown(database.close);
+    final weeklyImporter = WeeklyBundleImporter(database);
+    final bundle = {
+      'bundleVersion': '2.0',
+      'weekIdentifier': '2026-W46',
+      'generatedAt': '2026-11-17T00:00:00Z',
+      'source': {'title': 'Duplicate week test', 'sourceType': 'JSON_IMPORT'},
+      'entities': [
+        {
+          'id': 'duplicate-week-entity',
+          'category': 'ATHLETE',
+          'name': 'Duplicate Week',
+          'snapshots': [
+            {
+              'weekIdentifier': '2026-W45',
+              'totalNetWorth': 10,
+              'currencyUnit': 'USD_M',
+            },
+            {
+              'weekIdentifier': '2026-W45',
+              'totalNetWorth': 11,
+              'currencyUnit': 'USD_M',
+            },
+          ],
+        },
+      ],
+    };
+
+    await expectLater(
+      weeklyImporter.importBundle(jsonEncode(bundle)),
+      throwsFormatException,
+    );
+    final db = await database.database;
+    expect(await db.query('entities'), isEmpty);
+    expect(await db.query('weekly_snapshots'), isEmpty);
+  });
+
+  test('rejects invalid currency units and stream week metadata', () async {
+    final database = await newDatabase();
+    addTearDown(database.close);
+    final weeklyImporter = WeeklyBundleImporter(database);
+    Map<String, dynamic> bundle({
+      String currencyUnit = 'USD_M',
+      String lastUpdatedWeek = '2026-W46',
+      bool selfRelation = false,
+    }) => {
+      'bundleVersion': '2.0',
+      'weekIdentifier': '2026-W46',
+      'generatedAt': '2026-11-17T00:00:00Z',
+      'source': {'title': 'Validation test', 'sourceType': 'JSON_IMPORT'},
+      'entities': [
+        {
+          'id': 'validation-entity',
+          'category': 'ATHLETE',
+          'name': 'Validation Athlete',
+          'snapshots': [
+            {
+              'weekIdentifier': '2026-W46',
+              'totalNetWorth': 10,
+              'currencyUnit': currencyUnit,
+            },
+          ],
+          'incomeStreams': [
+            {
+              'streamType': 'SALARY_CONTRACT',
+              'title': 'Deal',
+              'lastUpdatedWeek': lastUpdatedWeek,
+            },
+          ],
+          if (selfRelation)
+            'relations': [
+              {
+                'targetId': 'validation-entity',
+                'relationType': 'OWNS_PROPERTY',
+              },
+            ],
+        },
+      ],
+    };
+
+    await expectLater(
+      weeklyImporter.importBundle(jsonEncode(bundle(currencyUnit: 'EUR'))),
+      throwsFormatException,
+    );
+    await expectLater(
+      weeklyImporter.importBundle(
+        jsonEncode(bundle(lastUpdatedWeek: '2026-W54')),
+      ),
+      throwsFormatException,
+    );
+    await expectLater(
+      weeklyImporter.importBundle(jsonEncode(bundle(selfRelation: true))),
+      throwsFormatException,
+    );
+
+    final db = await database.database;
+    expect(await db.query('entities'), isEmpty);
+    expect(await db.query('weekly_snapshots'), isEmpty);
+    expect(await db.query('income_streams'), isEmpty);
+    expect(await db.query('entity_relations'), isEmpty);
+  });
+
   test('rejects invalid ISO week identifiers', () async {
     final database = await newDatabase();
     addTearDown(database.close);

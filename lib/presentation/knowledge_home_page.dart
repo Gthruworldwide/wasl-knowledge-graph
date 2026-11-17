@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/knowledge_store.dart';
+import 'imf_indicators_page.dart';
 import 'wealth_home_page.dart';
 
 class KnowledgeHomePage extends StatefulWidget {
@@ -122,6 +123,16 @@ class _KnowledgeHomePageState extends State<KnowledgeHomePage> {
       appBar: AppBar(
         title: Text(isArabic ? 'وصل' : 'Wasl'),
         actions: [
+          IconButton(
+            tooltip: isArabic ? 'مؤشرات صندوق النقد' : 'IMF indicators',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) =>
+                    ImfIndicatorsPage(onLocaleChanged: widget.onLocaleChanged),
+              ),
+            ),
+            icon: const Icon(Icons.public_outlined),
+          ),
           IconButton(
             tooltip: isArabic ? 'ملفات الثروة' : 'Wealth profiles',
             onPressed: () => Navigator.of(context).push<void>(

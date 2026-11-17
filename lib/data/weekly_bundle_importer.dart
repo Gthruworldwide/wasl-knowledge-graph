@@ -43,8 +43,7 @@ class WeeklyBundleImporter {
       }
 
       for (final entity in bundle.entities) {
-        final snapshot = entity.snapshot;
-        if (snapshot != null) {
+        for (final snapshot in entity.snapshots) {
           await dao.upsertSnapshot(snapshot, executor: transaction);
         }
         for (final stream in entity.incomeStreams) {
@@ -66,9 +65,10 @@ class WeeklyBundleImporter {
     return ImportSummary(
       sourceId: bundle.source.id,
       entityCount: bundle.entities.length,
-      snapshotCount: bundle.entities
-          .where((item) => item.snapshot != null)
-          .length,
+      snapshotCount: bundle.entities.fold(
+        0,
+        (sum, item) => sum + item.snapshots.length,
+      ),
       incomeStreamCount: bundle.entities.fold(
         0,
         (sum, item) => sum + item.incomeStreams.length,
@@ -143,23 +143,13 @@ class WeeklyBundleImporter {
         createdAt: generatedAt,
         updatedAt: generatedAt,
       );
-      final snapshotJson = _optionalObject(rawEntity, 'snapshot');
-      final snapshot = snapshotJson == null
-          ? null
-          : WeeklySnapshot(
-              id: _uuid.v5(
-                _uuidNamespace,
-                'snapshot|$entityId|$weekIdentifier',
-              ),
-              entityId: entityId,
-              weekIdentifier: weekIdentifier,
-              recordedAt: generatedAt,
-              totalNetWorth: _optionalNumber(snapshotJson, 'totalNetWorth'),
-              currencyUnit:
-                  _optionalString(snapshotJson, 'currencyUnit') ?? 'USD_M',
-              summaryNote: _optionalString(snapshotJson, 'summaryNote'),
-              sourceId: sourceId,
-            );
+      final snapshots = _parseSnapshots(
+        rawEntity,
+        entityId: entityId,
+        bundleWeek: weekIdentifier,
+        generatedAt: generatedAt,
+        sourceId: sourceId,
+      );
       final incomeStreams = <IncomeStream>[];
       for (final rawStream in _optionalList(rawEntity, 'incomeStreams')) {
         if (rawStream is! Map<String, dynamic>) {
@@ -176,6 +166,9 @@ class WeeklyBundleImporter {
             'portfolioSharePercent must be between 0 and 100 for $entityId.',
           );
         }
+        final lastUpdatedWeek =
+            _optionalString(rawStream, 'lastUpdatedWeek') ?? weekIdentifier;
+        isoWeekMonday(lastUpdatedWeek);
         incomeStreams.add(
           IncomeStream(
             id: _uuid.v5(
@@ -187,8 +180,7 @@ class WeeklyBundleImporter {
             title: title,
             estimatedAnnualValue: annualValue,
             portfolioSharePercent: share,
-            lastUpdatedWeek:
-                _optionalString(rawStream, 'lastUpdatedWeek') ?? weekIdentifier,
+            lastUpdatedWeek: lastUpdatedWeek,
           ),
         );
       }
@@ -199,6 +191,11 @@ class WeeklyBundleImporter {
           throw const FormatException('Each relation must be an object.');
         }
         final targetId = _requiredString(rawRelation, 'targetId');
+        if (targetId == entityId) {
+          throw FormatException(
+            'Entity $entityId cannot reference itself in a relation.',
+          );
+        }
         final relationType = EntityRelationTypeValue.parse(
           _requiredString(rawRelation, 'relationType'),
         );
@@ -222,7 +219,7 @@ class WeeklyBundleImporter {
       entities.add(
         _ParsedEntity(
           entity: entity,
-          snapshot: snapshot,
+          snapshots: snapshots,
           incomeStreams: incomeStreams,
           relations: relations,
         ),
@@ -230,6 +227,67 @@ class WeeklyBundleImporter {
     }
 
     return _ParsedBundle(source: source, entities: entities);
+  }
+
+  List<WeeklySnapshot> _parseSnapshots(
+    Map<String, dynamic> rawEntity, {
+    required String entityId,
+    required String bundleWeek,
+    required String generatedAt,
+    required String sourceId,
+  }) {
+    final rawSnapshots = _optionalList(rawEntity, 'snapshots');
+    final snapshotEntries = <Map<String, dynamic>>[];
+    if (rawSnapshots.isNotEmpty) {
+      if (rawEntity['snapshot'] != null) {
+        throw FormatException(
+          'Entity $entityId cannot define both snapshot and snapshots.',
+        );
+      }
+      for (final rawSnapshot in rawSnapshots) {
+        if (rawSnapshot is! Map<String, dynamic>) {
+          throw const FormatException('Each snapshot must be a JSON object.');
+        }
+        snapshotEntries.add(rawSnapshot);
+      }
+    } else {
+      final singleSnapshot = _optionalObject(rawEntity, 'snapshot');
+      if (singleSnapshot != null) snapshotEntries.add(singleSnapshot);
+    }
+
+    final seenWeeks = <String>{};
+    final snapshots = <WeeklySnapshot>[];
+    for (final entry in snapshotEntries) {
+      final week = _optionalString(entry, 'weekIdentifier') ?? bundleWeek;
+      isoWeekMonday(week);
+      if (!seenWeeks.add(week)) {
+        throw FormatException(
+          'Duplicate snapshot week $week for entity $entityId.',
+        );
+      }
+      final currencyUnit = _optionalString(entry, 'currencyUnit') ?? 'USD_M';
+      if (!const {'USD_M', 'USD_B'}.contains(currencyUnit)) {
+        throw FormatException(
+          'Unsupported currencyUnit $currencyUnit for $entityId. '
+          'Use USD_M or USD_B.',
+        );
+      }
+      snapshots.add(
+        WeeklySnapshot(
+          id: _uuid.v5(_uuidNamespace, 'snapshot|$entityId|$week'),
+          entityId: entityId,
+          weekIdentifier: week,
+          recordedAt: entry['recordedAt'] == null
+              ? generatedAt
+              : _parseTimestamp(entry['recordedAt'], 'recordedAt'),
+          totalNetWorth: _optionalNumber(entry, 'totalNetWorth'),
+          currencyUnit: currencyUnit,
+          summaryNote: _optionalString(entry, 'summaryNote'),
+          sourceId: sourceId,
+        ),
+      );
+    }
+    return snapshots;
   }
 }
 
@@ -243,13 +301,13 @@ class _ParsedBundle {
 class _ParsedEntity {
   const _ParsedEntity({
     required this.entity,
-    required this.snapshot,
+    required this.snapshots,
     required this.incomeStreams,
     required this.relations,
   });
 
   final WealthEntity entity;
-  final WeeklySnapshot? snapshot;
+  final List<WeeklySnapshot> snapshots;
   final List<IncomeStream> incomeStreams;
   final List<EntityRelation> relations;
 }
