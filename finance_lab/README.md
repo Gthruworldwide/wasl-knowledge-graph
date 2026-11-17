@@ -32,14 +32,27 @@ uv sync --python 3.13 --extra heavy   # فقط OpenBB (vectorbt يأتي مع ri
 
 بعد تشغيل `quickstart.py` تجد في `output/`:
 
-- `prices.csv` — أسعار الإغلاق المعدّلة
+- `prices.csv` — أسعار الإغلاق المعدّلة + أعمدة `source_kind` / `source` / `fetched_at` على كل صف
 - `indicators.csv` — RSI / SMA / MACD
 - `weights.csv` — أوزان محفظة max-Sharpe
-- `quotes.csv` — أحدث أسعار الأصول
+- `quotes.csv` — أحدث أسعار الأصول ومعها نوع المصدر لكل صف
 - `gold.csv` — الذهب (futures / ETF) والفضة؛ رمز `XAUUSD=X` لا يوفره Yahoo في كل المناطق لذا استخدمنا `GC=F` و`GLD`
-- `equal_weight_tearsheet.html` — تقرير QuantStats
+- `provenance.json` — نوع المصدر والمصدر ووقت الجلب وسبب الرجوع للبديل
+- `equal_weight_tearsheet.html` — تقرير QuantStats (يُكتب فقط للبيانات الحقيقية)
+- `prices_live.csv` + `prices_live.meta.json` — آخر لقطة حقيقية تُستخدم كـ `cached` عند تعذّر الاتصال
 
-إذا فشل جلب Yahoo، يستخدم الكود سلسلة合成ة مقبضة (`synthetic_prices`) حتى تعمل التجربة دون إنترنت.
+## وسم البيانات (مطابق لـ WASL_FINANCIAL_AI_SPEC.md)
+
+كل صف مُوسوم بأحد الأنواع: `live` | `cached` | `synthetic` | `manual`.
+
+ترتيب الحل: `yfinance` حيّ ← لقطة محلية حقيقية `cached` ← بيانات تجريبية `synthetic`. لا تُخلط المصادر داخل مجموعة واحدة أبداً. إذا كانت النتيجة `synthetic` فيطبع السكربت تحذيراً صريحاً ويُمنع كتابة تقرير الأداء (`SyntheticDataError`) حتى لا تبدو الأرقام التجريبية كأنها نتائج مالية حقيقية.
+
+في الاختبارات يمكن فرض المسار دون إنترنت:
+
+```python
+dataset = load_prices(["GLD", "SPY"], allow_live=False, allow_cache=False)
+assert dataset.kind is SourceKind.SYNTHETIC
+```
 
 ## CI (GitHub Actions / Buildkite)
 
