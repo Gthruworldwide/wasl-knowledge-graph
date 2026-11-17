@@ -54,6 +54,23 @@ dataset = load_prices(["GLD", "SPY"], allow_live=False, allow_cache=False)
 assert dataset.kind is SourceKind.SYNTHETIC
 ```
 
+## كتالوج المعادلات (مرحلة أولى من WASL_FINANCIAL_AI_SPEC.md)
+
+`src/finance_lab/equations/` يوفّر 21 معادلة بعقود typed وحتمية:
+
+- `catalog.py` — معرّف ثابت، اسم عربي/إنجليزي، الصيغة، الرموز، الوحدات، قواعد العملة والفترة، حالات الحدّية، مثال معلّم، ناتج متوقع، سماحية، مرجع وإصدار.
+- `engine.py` — التنفيذ الحتمي. المقام الصفري أو البيانات المفقودة أو تعارض العملات/الفترات يعطي `defined=False` وسبباً مقروءاً و`display == "غير متاح"` بدلاً من صفر مختلق. خلط `live` مع `synthetic` ممنوع صراحةً (`mixed_provenance`).
+- `training.py` — `grade_answer()` يقارن إجابة المتعلم بالناتج المرجعي **من الكتالوج**، لا من نموذج ذكاء اصطناعي؛ السماحية معلنة لكل معادلة.
+
+التشغيل:
+
+```powershell
+uv run python scripts\equations_demo.py   # يكتب output/equations_catalog.json
+uv run pytest -q                          # 12 اختباراً، من ضمنها متجه رقمي لكل معادلة
+```
+
+الاختبارات لا تستخدم الذكاء الاصطناعي كمصدر حقيقة: كل معادلة لها متجه رقمي مستقل في `tests/test_equations.py`.
+
 ## CI (GitHub Actions / Buildkite)
 
 الملف `.github/workflows/ci.yml` يشغّل عند `push` و`pull_request`:
