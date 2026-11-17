@@ -72,3 +72,5 @@ Both the general knowledge graph and wealth records are stored locally on the de
 ## Local research lab (`finance_lab/`)
 
 `finance_lab/` is a separate Python environment used for offline research and for validating market/gold/portfolio numbers before they inform the app. It is not shipped inside the Flutter app and contains no API keys (only placeholders in `.env.example`). See `finance_lab/README.md` for setup and outputs. CI for it lives at `.github/workflows/finance-lab-ci.yml` (GitHub Actions / Buildkite compatibility, push and PR only — no `schedule`).
+
+For the scoped financial metrics, formulas, formula-training workflow, AI engine boundaries, privacy requirements, and licensing status, see [WASL_FINANCIAL_AI_SPEC.md](WASL_FINANCIAL_AI_SPEC.md).
