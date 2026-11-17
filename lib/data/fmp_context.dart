@@ -1,7 +1,9 @@
 /// The kind of locally cached Financial Modeling Prep context row.
 enum FmpContextKind {
   cpi('CPI'),
-  indexQuote('INDEX_QUOTE');
+  indexQuote('INDEX_QUOTE'),
+  assetQuote('ASSET_QUOTE'),
+  cryptoQuote('CRYPTO_QUOTE');
 
   const FmpContextKind(this.dbValue);
 
@@ -11,6 +13,32 @@ enum FmpContextKind {
     (kind) => kind.dbValue == value,
     orElse: () => throw FormatException('Unknown FMP context kind: $value'),
   );
+}
+
+/// Single-symbol quotes confirmed working on the free FMP key.
+const List<String> fmpIndexSymbols = <String>['^GSPC', '^IXIC', '^DJI'];
+
+/// Additional single-symbol quotes attempted on the free key. A symbol that
+/// is unavailable becomes a sync warning; it never discards other quotes.
+const List<String> fmpAssetSymbols = <String>['GLD', 'SLV', 'SPY', 'QQQ'];
+const List<String> fmpCryptoSymbols = <String>['BTCUSD', 'ETHUSD'];
+
+const List<String> fmpExtendedSymbols = <String>[
+  ...fmpAssetSymbols,
+  ...fmpCryptoSymbols,
+];
+
+const List<String> fmpAllQuoteSymbols = <String>[
+  ...fmpIndexSymbols,
+  ...fmpExtendedSymbols,
+];
+
+/// No batch quote endpoint is used: `/stable/batch-quote` returns HTTP 402 on
+/// the free key, so every symbol is fetched with its own `/stable/quote` call.
+FmpContextKind fmpKindForSymbol(String symbol) {
+  if (fmpIndexSymbols.contains(symbol)) return FmpContextKind.indexQuote;
+  if (fmpCryptoSymbols.contains(symbol)) return FmpContextKind.cryptoQuote;
+  return FmpContextKind.assetQuote;
 }
 
 /// A cached FMP data point shown alongside the IMF indicators.

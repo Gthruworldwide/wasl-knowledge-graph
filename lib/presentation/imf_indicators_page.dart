@@ -7,6 +7,7 @@ import '../data/imf_cpi_catalog.dart';
 import '../data/imf_observation.dart';
 import '../data/imf_repository.dart';
 import '../data/imf_sdmx_client.dart';
+import '../data/market_data_repository.dart';
 import '../data/wealth_database.dart';
 import 'wealth_profile_page.dart';
 
@@ -15,12 +16,14 @@ class ImfIndicatorsPage extends StatefulWidget {
     required this.onLocaleChanged,
     this.database,
     this.repository,
+    this.marketRepository,
     super.key,
   });
 
   final ValueChanged<Locale> onLocaleChanged;
   final WealthDatabase? database;
   final ImfRepository? repository;
+  final MarketDataRepository? marketRepository;
 
   @override
   State<ImfIndicatorsPage> createState() => _ImfIndicatorsPageState();
@@ -29,6 +32,7 @@ class ImfIndicatorsPage extends StatefulWidget {
 class _ImfIndicatorsPageState extends State<ImfIndicatorsPage> {
   late final WealthDatabase _database;
   late final ImfRepository _repository;
+  late final MarketDataRepository _marketRepository;
   final List<_ImfCardData> _cards = [];
   ImfSettings _settings = const ImfSettings(
     countryCodes: defaultImfCountryCodes,
@@ -43,6 +47,8 @@ class _ImfIndicatorsPageState extends State<ImfIndicatorsPage> {
   bool _hasFmpKey = false;
   List<FmpContextRow> _fmpCpi = const <FmpContextRow>[];
   List<FmpContextRow> _fmpQuotes = const <FmpContextRow>[];
+  bool _marketSyncing = false;
+  List<MarketDataRow> _marketRows = const <MarketDataRow>[];
 
   bool get _isArabic => Localizations.localeOf(context).languageCode == 'ar';
 
@@ -51,6 +57,8 @@ class _ImfIndicatorsPageState extends State<ImfIndicatorsPage> {
     super.initState();
     _database = widget.database ?? WealthDatabase();
     _repository = widget.repository ?? ImfRepository(_database);
+    _marketRepository =
+        widget.marketRepository ?? MarketDataRepository(_database);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       await _reload();
@@ -77,9 +85,11 @@ class _ImfIndicatorsPageState extends State<ImfIndicatorsPage> {
       final latest = await _repository.latestObservations();
       final cards = await Future.wait(latest.map(_loadCard));
       final fmpCpi = await _repository.fmpContext(kind: FmpContextKind.cpi);
-      final fmpQuotes =
-          await _repository.fmpContext(kind: FmpContextKind.indexQuote);
+      final fmpQuotes = (await _repository.fmpContext())
+          .where((row) => row.kind != FmpContextKind.cpi)
+          .toList();
       final hasFmpKey = await _repository.hasFmpApiKey();
+      final marketRows = await _marketRepository.latest();
       if (!mounted) return;
       setState(() {
         _settings = settings;
@@ -89,6 +99,7 @@ class _ImfIndicatorsPageState extends State<ImfIndicatorsPage> {
         _fmpCpi = fmpCpi;
         _fmpQuotes = fmpQuotes;
         _hasFmpKey = hasFmpKey;
+        _marketRows = marketRows;
         _loading = false;
       });
     } on Object catch (error) {
@@ -230,6 +241,35 @@ class _ImfIndicatorsPageState extends State<ImfIndicatorsPage> {
     }
   }
 
+  Future<void> _syncMarket() async {
+    if (_marketSyncing) return;
+    setState(() => _marketSyncing = true);
+    try {
+      final summary = await _marketRepository.syncMarketData(
+        isArabic: _isArabic,
+      );
+      await _reload();
+      if (!mounted) return;
+      final warnings = summary.errors.isEmpty
+          ? ''
+          : ' ${_isArabic ? 'تحذيرات' : 'Warnings'}: '
+              '${summary.errors.join(' ')}';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isArabic
+                ? 'تم تحديث ${summary.rowCount} أصل من أسعار السوق.$warnings'
+                : 'Updated ${summary.rowCount} market assets.$warnings',
+          ),
+        ),
+      );
+    } on Object catch (error) {
+      if (mounted) _showError(error);
+    } finally {
+      if (mounted) setState(() => _marketSyncing = false);
+    }
+  }
+
   Future<void> _editFmpKey() async {
     final changed = await showDialog<bool>(
       context: context,
@@ -312,6 +352,15 @@ class _ImfIndicatorsPageState extends State<ImfIndicatorsPage> {
               syncing: _fmpSyncing,
               onSync: _syncFmp,
               onEditKey: _editFmpKey,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: _MarketDataCard(
+              isArabic: isArabic,
+              rows: _marketRows,
+              syncing: _marketSyncing,
+              onSync: _syncMarket,
             ),
           ),
           Padding(
@@ -689,6 +738,160 @@ class _FmpQuoteChip extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MarketDataCard extends StatelessWidget {
+  const _MarketDataCard({
+    required this.isArabic,
+    required this.rows,
+    required this.syncing,
+    required this.onSync,
+  });
+
+  final bool isArabic;
+  final List<MarketDataRow> rows;
+  final bool syncing;
+  final VoidCallback onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final lastFetched = rows.isEmpty
+        ? null
+        : rows.map((row) => row.fetchedAt).reduce((a, b) => a.compareTo(b) >= 0 ? a : b);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.monetization_on_outlined),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isArabic
+                        ? 'الذهب والأصول • Yahoo Finance'
+                        : 'Gold & assets • Yahoo Finance',
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              isArabic
+                  ? 'GC=F وGLD وSLV • جلب صريح بلا مفتاح API • XAUUSD=X غير متاح.'
+                  : 'GC=F, GLD and SLV • explicit key-free fetch • XAUUSD=X unavailable.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    lastFetched == null
+                        ? (isArabic ? 'لا توجد بيانات محفوظة' : 'Nothing cached yet')
+                        : '${isArabic ? 'آخر جلب' : 'Last fetch'}: ${_shortTime(lastFetched)}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+                FilledButton.icon(
+                  onPressed: syncing ? null : onSync,
+                  icon: syncing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cloud_download_outlined),
+                  label: Text(isArabic ? 'جلب السوق' : 'Sync market'),
+                ),
+              ],
+            ),
+            if (rows.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final row in rows) _MarketAssetChip(row: row, isArabic: isArabic),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isArabic
+                    ? 'كل صف موسوم بـ cached: نتيجة جلب live محفوظة محليًا؛ لا تُعرض بيانات اصطناعية كأسعار.'
+                    : 'Every row is labeled cached: a live fetch stored locally; synthetic data is never shown as a price.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _shortTime(String iso) {
+    final parsed = DateTime.tryParse(iso);
+    if (parsed == null) return iso;
+    return parsed.toLocal().toIso8601String().substring(0, 16);
+  }
+}
+
+class _MarketAssetChip extends StatelessWidget {
+  const _MarketAssetChip({required this.row, required this.isArabic});
+
+  final MarketDataRow row;
+  final bool isArabic;
+
+  @override
+  Widget build(BuildContext context) {
+    final change = row.changePercent;
+    final changeText = change == null
+        ? '—'
+        : '${change >= 0 ? '+' : ''}${change.toStringAsFixed(2)}%';
+    final changeColor = change == null
+        ? null
+        : (change >= 0 ? Colors.green.shade300 : Colors.red.shade300);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.tertiary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(row.asset.label(isArabic), style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Text(
+                row.value.toStringAsFixed(2),
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                changeText,
+                style: TextStyle(
+                  color: changeColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${row.symbol} • ${row.provenance}',
+            style: Theme.of(context).textTheme.labelSmall,
           ),
         ],
       ),

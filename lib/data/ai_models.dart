@@ -190,14 +190,15 @@ class AiHostedDisabled implements Exception {
 
   @override
   String toString() =>
-      'Hosted transfer is disabled until the privacy and license review is completed.';
+      'Hosted transfer is disabled. Configure a provider with runtime settings first.';
 }
 
 abstract class HostedAiTransport {
   const HostedAiTransport();
 
-  /// Implemented only after explicit consent AND the review in
-  /// WASL_AI_REVIEW.md. The default implementation is always disabled.
+  /// An optional HTTP transport. It is only reached after runtime provider
+  /// settings exist AND the user grants per-request consent. The default
+  /// implementation is always disabled.
   Future<String> generate(AiPayload payload);
 }
 

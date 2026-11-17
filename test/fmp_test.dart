@@ -36,6 +36,10 @@ MockClient _routingClient(List<Uri> requests) => MockClient((request) async {
       '^GSPC': 'S&P 500',
       '^IXIC': 'NASDAQ Composite',
       '^DJI': 'Dow Jones Industrial Average',
+      'GLD': 'Gold ETF',
+      'SLV': 'Silver ETF',
+      'BTCUSD': 'Bitcoin',
+      'ETHUSD': 'Ethereum',
     };
     return http.Response(
       jsonEncode(<Object?>[
@@ -174,10 +178,11 @@ void main() {
       await repository.saveFmpApiKey(_testKey);
       expect(await repository.loadFmpApiKey(), _testKey);
 
+      final expectedQuotes = 1 + fmpAllQuoteSymbols.length;
       final summary = await repository.syncFmpContext();
-      expect(summary.rowCount, 4);
+      expect(summary.rowCount, expectedQuotes);
       expect(summary.errors, isEmpty);
-      expect(requests, hasLength(4));
+      expect(requests, hasLength(expectedQuotes));
       expect(
         requests.every((uri) => !uri.toString().contains(_testKey)),
         isTrue,
@@ -200,14 +205,14 @@ void main() {
       );
 
       final second = await repository.syncFmpContext();
-      expect(second.rowCount, 4);
+      expect(second.rowCount, expectedQuotes);
       final rows = await (await database.database).query('fmp_market_context');
-      expect(rows, hasLength(4));
+      expect(rows, hasLength(expectedQuotes));
 
       await repository.clearFmpApiKey();
       expect(await repository.hasFmpApiKey(), isFalse);
       expect(() => repository.syncFmpContext(), throwsStateError);
-      expect(await repository.fmpContext(), hasLength(4));
+      expect(await repository.fmpContext(), hasLength(expectedQuotes));
     });
   });
 }

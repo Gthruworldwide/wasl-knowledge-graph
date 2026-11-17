@@ -1,4 +1,5 @@
 import 'ai_models.dart';
+import 'hosted_ai.dart';
 
 class SanitizedPayload {
   final AiPayload payload;
@@ -98,19 +99,28 @@ class AiPayloadSanitizer {
 /// Consent is session-scoped and in memory only: nothing is persisted and
 /// revoking immediately clears the session payload.
 class AiConsentManager {
-  AiConsentManager({HostedAiTransport? transport})
-      : _transport = transport ?? const DisabledHostedAiTransport();
+  AiConsentManager({
+    HostedAiTransport? transport,
+    this.hostedEnabled = false,
+  }) : _transport = transport ?? const DisabledHostedAiTransport();
 
   final HostedAiTransport _transport;
+  bool hostedEnabled;
   bool _consentGranted = false;
   AiPayload? _sessionPayload;
+  String? _lastHostedText;
 
   bool get hasConsent => _consentGranted;
 
-  /// Hard gate. Enabling requires the review recorded in WASL_AI_REVIEW.md.
-  bool get hostedAvailable => false;
+  /// Enabled at runtime only after the user configures a hosted provider.
+  /// Consent is still required for every individual request.
+  bool get hostedAvailable => hostedEnabled;
+
+  void setHostedEnabled(bool enabled) => hostedEnabled = enabled;
 
   AiPayload? get sessionPayload => _sessionPayload;
+
+  String? get lastHostedText => _lastHostedText;
 
   void grantConsent() => _consentGranted = true;
 
@@ -119,7 +129,10 @@ class AiConsentManager {
     clearSessionData();
   }
 
-  void clearSessionData() => _sessionPayload = null;
+  void clearSessionData() {
+    _sessionPayload = null;
+    _lastHostedText = null;
+  }
 
   SanitizedPayload preview(AiPayload payload) {
     final sanitized = const AiPayloadSanitizer().sanitize(payload);
@@ -132,6 +145,9 @@ class AiConsentManager {
     if (!hostedAvailable) throw const AiHostedDisabled();
     final sanitized = const AiPayloadSanitizer().sanitize(payload);
     _sessionPayload = sanitized.payload;
-    return _transport.generate(sanitized.payload);
+    final text = await _transport.generate(sanitized.payload);
+    // A hosted model may never introduce a number absent from the payload.
+    _lastHostedText = const HostedAiTextGuard().validate(text, sanitized.payload);
+    return _lastHostedText!;
   }
 }

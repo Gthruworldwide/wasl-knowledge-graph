@@ -6,6 +6,7 @@ import '../data/ai_consent.dart';
 import '../data/ai_experts.dart';
 import '../data/ai_grounding.dart';
 import '../data/ai_models.dart';
+import '../data/hosted_ai.dart';
 import '../data/equation_catalog.dart';
 import '../data/equation_exercises.dart';
 
@@ -19,14 +20,37 @@ class AiExplanationPage extends StatefulWidget {
 class _AiExplanationPageState extends State<AiExplanationPage> {
   final _questionController = TextEditingController();
   final _grounding = const AiGroundingEngine();
-  final _consent = AiConsentManager();
+  final _settingsStore = const HostedAiSettingsStore();
+  late final AiConsentManager _consent;
 
   AiExpertKind _expert = AiExpertKind.equationTutor;
   String _equationId = equationCatalog.first.id;
   GroundedResponse? _response;
   String? _status;
+  HostedAiSettings _settings = const HostedAiSettings();
+  String? _hostedText;
 
   bool get _isArabic => Localizations.localeOf(context).languageCode == 'ar';
+
+  @override
+  void initState() {
+    super.initState();
+    _consent = AiConsentManager(
+      transport: HttpHostedAiTransport(settingsProvider: _settingsStore.load),
+    );
+    _loadHostedSettings();
+  }
+
+  Future<void> _loadHostedSettings() async {
+    try {
+      final settings = await _settingsStore.load();
+      if (!mounted) return;
+      setState(() => _settings = settings);
+      _consent.setHostedEnabled(settings.isConfigured);
+    } on Object {
+      // Keep the hosted API disabled if settings cannot be read.
+    }
+  }
 
   @override
   void dispose() {
@@ -114,18 +138,54 @@ class _AiExplanationPageState extends State<AiExplanationPage> {
     if (approved != true || !mounted) return;
     _consent.grantConsent();
     try {
-      await _consent.sendToHosted(payload);
+      final text = await _consent.sendToHosted(payload);
+      if (!mounted) return;
+      setState(() {
+        _hostedText = text;
+        _status = _isArabic
+            ? 'تم استلام الرد؛ رُفض أي رقم غير موجود في الحمولة.'
+            : 'Response received; any number absent from the payload was rejected.';
+      });
     } on AiHostedDisabled {
       if (!mounted) return;
-      setState(() => _status = _isArabic
-          ? 'النقل إلى نموذج مستضاف غير مُفعّل؛ مراجعة الخصوصية والترخيص مطلوبة أولاً.'
-          : 'Hosted transfer is disabled; privacy and license review must come first.');
+      setState(() {
+        _hostedText = null;
+        _status = _isArabic
+            ? 'النقل إلى نموذج مستضاف غير مُفعّل؛ اضبط إعدادات النموذج أولاً.'
+            : 'Hosted transfer is disabled; configure the provider first.';
+      });
     } on AiConsentRequired {
       if (!mounted) return;
       setState(() => _status = _isArabic
           ? 'الموافقة مطلوبة قبل أي إرسال.'
           : 'Consent is required before any transfer.');
+    } on AiHostedOutputRejected catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _hostedText = null;
+        _status = '${_isArabic ? 'رُفض الرد' : 'Response rejected'}: ${error.reason}';
+      });
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _hostedText = null;
+        _status = error.toString();
+      });
     }
+  }
+
+  Future<void> _editHostedSettings() async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (_) => _HostedSettingsDialog(
+        isArabic: _isArabic,
+        settings: _settings,
+        onSave: _settingsStore.save,
+        onClear: _settingsStore.clear,
+      ),
+    );
+    if (changed != true || !mounted) return;
+    await _loadHostedSettings();
   }
 
   void _clearSession() {
@@ -241,24 +301,44 @@ class _AiExplanationPageState extends State<AiExplanationPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isArabic ? 'نموذج مستضاف (مغلق افتراضيًا)' : 'Hosted model (off by default)',
+                      isArabic
+                          ? (_settings.isConfigured
+                              ? 'نموذج مستضاف • ${_settings.model}'
+                              : 'نموذج مستضاف (مغلق افتراضيًا)')
+                          : (_settings.isConfigured
+                              ? 'Hosted model • ${_settings.model}'
+                              : 'Hosted model (off by default)'),
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       isArabic
-                        ? 'الموافقة وحدها لا تُفعّل الإرسال؛ يجب أولاً استكمال مراجعة الخصوصية والتكلفة والترخيص.'
-                        : 'Consent alone does not enable transfer; the privacy, cost and license review must be completed first.',
+                          ? 'المفتاح يُدخل وقت التشغيل ويُحفظ على الجهاز فقط؛ كل إرسال يتطلب مراجعة الحمولة والموافقة.'
+                          : 'The key is entered at runtime and stored on-device only; every request requires a payload review and consent.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
+                      runSpacing: 8,
                       children: [
+                        OutlinedButton.icon(
+                          onPressed: _editHostedSettings,
+                          icon: const Icon(Icons.settings_outlined),
+                          label: Text(isArabic ? 'إعدادات النموذج' : 'Model settings'),
+                        ),
                         OutlinedButton.icon(
                           onPressed: _reviewHosted,
                           icon: const Icon(Icons.privacy_tip_outlined),
-                          label: Text(isArabic ? 'مراجعة الإرسال' : 'Review transfer'),
+                          label: Text(
+                            isArabic
+                                ? (_settings.isConfigured
+                                    ? 'إرسال للنموذج'
+                                    : 'مراجعة الإرسال')
+                                : (_settings.isConfigured
+                                    ? 'Send to model'
+                                    : 'Review transfer'),
+                          ),
                         ),
                         OutlinedButton.icon(
                           onPressed: _clearSession,
@@ -267,6 +347,30 @@ class _AiExplanationPageState extends State<AiExplanationPage> {
                         ),
                       ],
                     ),
+                    if (_hostedText != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: SelectableText(
+                          _hostedText!,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          isArabic
+                              ? 'نص مُولّد للصياغة فقط؛ الأرقام النهائية من المحرك الحتمي.'
+                              : 'Generated wording only; final numbers come from the deterministic engine.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                     if (_status != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 10),
@@ -282,6 +386,167 @@ class _AiExplanationPageState extends State<AiExplanationPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _HostedSettingsDialog extends StatefulWidget {
+  const _HostedSettingsDialog({
+    required this.isArabic,
+    required this.settings,
+    required this.onSave,
+    required this.onClear,
+  });
+
+  final bool isArabic;
+  final HostedAiSettings settings;
+  final Future<void> Function(HostedAiSettings settings) onSave;
+  final Future<void> Function() onClear;
+
+  @override
+  State<_HostedSettingsDialog> createState() => _HostedSettingsDialogState();
+}
+
+class _HostedSettingsDialogState extends State<_HostedSettingsDialog> {
+  late final TextEditingController _baseUrl = TextEditingController(
+    text: widget.settings.baseUrl,
+  );
+  late final TextEditingController _model = TextEditingController(
+    text: widget.settings.model,
+  );
+  late final TextEditingController _key = TextEditingController(
+    text: widget.settings.apiKey,
+  );
+  bool _obscure = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _baseUrl.dispose();
+    _model.dispose();
+    _key.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onSave(
+        HostedAiSettings(
+          apiKey: _key.text.trim(),
+          baseUrl: _baseUrl.text.trim(),
+          model: _model.text.trim(),
+        ),
+      );
+      if (mounted) Navigator.pop(context, true);
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error.toString();
+        });
+      }
+    }
+  }
+
+  Future<void> _clear() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.onClear();
+      if (mounted) Navigator.pop(context, true);
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ar = widget.isArabic;
+    return AlertDialog(
+      title: Text(ar ? 'إعدادات النموذج المُستضاف' : 'Hosted model settings'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              ar
+                  ? 'تُحفظ هذه القيم على الجهاز فقط. يُرسل المفتاح في ترويسةAuthorization إلى المزوّد الذي تختاره فقط، ولا يُضاف إلى السجلات أو الروابط.'
+                  : 'Stored on this device only. The key is sent in an Authorization header to your chosen provider only, never in logs or URLs.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _baseUrl,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: ar ? 'Base URL' : 'Base URL',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _model,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: ar ? 'اسم النموذج' : 'Model name',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _key,
+              obscureText: _obscure,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: ar ? 'مفتاح API' : 'API key',
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  tooltip: _obscure ? (ar ? 'إظهار' : 'Show') : (ar ? 'إخفاء' : 'Hide'),
+                  icon: Icon(
+                    _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  ),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        if (widget.settings.isConfigured)
+          TextButton(
+            onPressed: _saving ? null : _clear,
+            child: Text(ar ? 'حذف' : 'Clear'),
+          ),
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: Text(ar ? 'إلغاء' : 'Cancel'),
+        ),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: Text(ar ? 'حفظ' : 'Save'),
+        ),
+      ],
     );
   }
 }

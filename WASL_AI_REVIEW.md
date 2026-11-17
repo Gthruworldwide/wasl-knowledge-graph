@@ -1,8 +1,11 @@
 # Wasl AI — privacy, cost and license review gate
 
-Status: **review pending**. The app ships with a local-only, deterministic
-explanation coordinator. No hosted model is enabled, no model key is configured,
-and no fine-tuning has been started.
+Status: **hosted transport implemented but owner-gated**. The app always ships
+with a local-only, deterministic explanation coordinator. An optional hosted
+transport exists but is **off by default**: it stays disabled until the user
+enters a provider at runtime, and each request still requires an explicit
+payload review and consent. This document does **not** grant approval to use a
+specific provider; the owner decisions in the gates below remain outstanding.
 
 The Wasl repository is **private** and has **no `LICENSE` file**. The mere
 existence of `WASL_FINANCIAL_AI_SPEC.md` or this document grants no open-source
@@ -27,10 +30,24 @@ project owner before making the repository public or distributing the app.
 - Consent: session-scoped and in memory only. Nothing is persisted. The user
   sees the exact allowlisted payload before approving, can cancel, and can
   revoke consent and clear session data at any time.
+- Hosted transport (`HttpHostedAiTransport`, OpenAI-compatible
+  `POST /v1/chat/completions`): disabled until the user supplies a base URL,
+  model and key through **Model settings**. The key is device-local only, sent
+  **only** in an `Authorization: Bearer …` header, never in a URL, body, log or
+  provenance, and scrubbed from error messages. Request URLs and error objects
+  are key-free.
+- Defense in depth: `AiPayloadSanitizer` strips credential-like keys and
+  credential-bearing URL parameters from the allowlisted payload before any
+  transfer. `AiPayload` itself has no key field.
+- Numeric output guard: `HostedAiTextGuard` rejects any hosted text containing a
+  number not already present in the payload (with Arabic-Indic/comma-digit
+  normalization). Rejected text is never stored or displayed. Hosted text is
+  labeled "generated wording only"; final numbers always come from the deterministic
+  engine.
 
 ## Exact hosted payload allowlist
 
-If a hosted transport is ever enabled, it may receive only:
+A hosted request may receive only:
 
 ```
 expert        enum name (equationTutor | metricExplainer | dataQualityReviewer)
@@ -40,30 +57,39 @@ citations[]   label, uri, retrieved_at?
 ```
 
 Excluded, always: user history, raw database rows, wealth profiles, device
-identifiers, files, source code, and all API keys or tokens. A sanitizer strips
-sensitive keys and redacts credential-bearing URL parameters even from the
-allowlisted payload. `AiPayload` itself has no key field.
+identifiers, files, source code, and all API keys or tokens. The sanitizer
+enforces this even against the allowlisted projection. The system prompt forbids
+invented numbers, recommendations, fatwas and unlisted citations; `temperature`
+is fixed at `0`.
 
-## Gates that must be completed before enabling any hosted model
+## Gates completed in code
 
-1. **Explicit consent UI** — already implemented; must stay visible and must
-   name the provider and the data above before any network call.
-2. **Privacy** — document provider retention, training usage and data location.
-   User history is never sent by default and is never used to train a model.
-   Cancellation and session-data removal must keep working.
-3. **Cost** — set per-user/per-session quotas, show cost/latency expectations,
+1. **Explicit consent UI** — implemented: payload preview, per-request consent,
+   cancel, and session-data removal; names the configured provider/model.
+2. **Operations** — no keys in source, tests, docs, logs, URLs or provenance;
+   runtime-entered keys only, sent only to the user-chosen provider; errors
+   scrub the key; output numbers are guarded.
+
+## Gates that still require the project owner's decision
+
+These are **not** completed by the code and must be resolved before a hosted
+provider is used for real or commercial data:
+
+3. **Privacy** — document the chosen provider's retention, training usage and
+   data location. User history is never sent by default and is never used to
+   train a model. Cancellation and session-data removal must keep working.
+4. **Cost** — set per-user/per-session quotas, show cost/latency expectations,
    and define what happens when the budget is exhausted.
-4. **Model license** — verify the provider terms and the specific model license
+5. **Model license** — verify the provider terms and the specific model license
    for the intended commercial use and redistribution, including output rights.
-5. **Data-source terms** — re-check IMF SDMX terms, FMP terms, and every price
+6. **Data-source terms** — re-check IMF SDMX terms, FMP terms, and every price
    vendor license before commercial use or redistribution. Preserve source URL,
    retrieval time, covered period, currency and unit with every value.
-6. **Dataset rights (only if fine-tuning)** — see below.
 7. **Evaluation** — keep a held-out Arabic question set covering normal cases,
    zero denominators, missing data, unit/currency mismatch and mixed
-   provenance. Measure that the coordinator still refuses to fabricate numbers.
-8. **Operations** — no keys in source, tests, docs, logs, URLs or provenance;
-   runtime-entered keys only; send them only to their owning provider.
+   provenance. Measure that the coordinator still refuses to fabricate numbers,
+   including through the hosted path.
+8. **Dataset rights (only if fine-tuning)** — see below.
 
 ## Fine-tuning (optional phase 4 — not started)
 
@@ -82,5 +108,10 @@ decision. User logs and API keys are never training data.
 - No arbitrary SQL and no database write without explicit confirmation.
 - No numbers outside the deterministic engines and declared sources.
 
-Decision log: 2026-11-17 — local coordinator and consent gate implemented;
-hosted transport deliberately left disabled pending the checklist above.
+Decision log:
+- 2026-11-17 — local coordinator and consent gate implemented; hosted transport
+  deliberately left disabled pending the checklist above.
+- 2026-11-18 — optional runtime-configured hosted transport added behind
+  settings, per-request consent, sanitizer and numeric output guard. It remains
+  off until configured and consented; provider privacy, cost, license,
+  data-source terms and evaluation decisions (gates 3–7) remain with the owner.

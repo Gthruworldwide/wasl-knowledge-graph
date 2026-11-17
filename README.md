@@ -4,7 +4,7 @@ Wasl is a standalone Flutter mobile app (`com.gthruworldwide.wasl.app`) and loca
 
 ## Wealth data foundation
 
-The version 5 SQLite database in `lib/data/wealth_database.dart` defines entities, weekly snapshots, income streams, relations, sources, a local cache of IMF CPI observations, and a local cache of Financial Modeling Prep market context. Entities and relations retain source links; relations also support optional valid-time ranges. `WealthDao` provides typed access and recalculates a snapshot's week-over-week percentage against the immediately preceding ISO week. The importer writes a complete bundle in a single transaction.
+The version 6 SQLite database in `lib/data/wealth_database.dart` defines entities, weekly snapshots, income streams, relations, sources, a local cache of IMF CPI observations, a local cache of Financial Modeling Prep market context, and a `market_data_cache` of gold/silver quotes where every row carries a `provenance` label. Entities and relations retain source links; relations also support optional valid-time ranges. `WealthDao` provides typed access and recalculates a snapshot's week-over-week percentage against the immediately preceding ISO week. The importer writes a complete bundle in a single transaction.
 
 The general connected-knowledge screen remains the app's primary view. Open the wealth pilot using the insights icon. It provides category filters, sourced wealth cards and profiles, history charts, income diversification, and clickable holdings. Users can add a sourced entity manually or paste a v2.0 JSON bundle; the fictional sample is clearly labeled and imported only on explicit selection.
 
@@ -47,12 +47,22 @@ final summary = await repository.importCpi(
 
 The same screen can optionally show context from Financial Modeling Prep (FMP). **The API key is entered at runtime** through the **API key** button: it is stored only in this device's `SharedPreferences`, is never written to source, tests, or documentation, and is sent in an `apikey` HTTP header rather than in the URL. Saved source URLs contain no credentials, and error messages scrub the key before display. Use **Clear** to remove it.
 
-FMP sync is **explicit only** (`Sync FMP`) — there is no background fetch and it is unrelated to the IMF auto-refresh. `FmpClient` calls the stable `/economic-indicators?name=CPI` endpoint and single-symbol `/quote?symbol=...` calls for `^GSPC`, `^IXIC`, and `^DJI` (the batch-quote endpoint requires a higher plan). The latest CPI point and the three index quotes are cached in `fmp_market_context` with `UNIQUE(kind, symbol, period)`, so re-syncing upserts instead of duplicating rows. Cached cards remain available offline.
+FMP sync is **explicit only** (`Sync FMP`) — there is no background fetch and it is unrelated to the IMF auto-refresh. `FmpClient` calls the stable `/economic-indicators?name=CPI` endpoint and **one `/quote?symbol=...` request per symbol** (the batch-quote endpoint returns HTTP 402 on the free key). It covers the indices `^GSPC`, `^IXIC`, `^DJI` plus best-effort extended symbols (`GLD`, `SLV`, `SPY`, `QQQ`, `BTCUSD`, `ETHUSD`). An unavailable symbol becomes a sync warning and never discards the other quotes. `/stable/batch-quote`, `/stable/economic-calendar` (402) and `/stable/treasury-rates` (404) are documented as blocked and are never called. Rows are cached in `fmp_market_context` with `UNIQUE(kind, symbol, period)`, so re-syncing upserts instead of duplicating rows. Cached cards remain available offline.
 
 ```dart
 await repository.saveFmpApiKey(keyEnteredByUser);
 final summary = await repository.syncFmpContext();
-final quotes = await repository.fmpContext(kind: FmpContextKind.indexQuote);
+final quotes = await repository.fmpContext();
+```
+
+### Yahoo gold and assets (key-free)
+
+The same screen has a separate **Sync market** action for key-free Yahoo Finance quotes: `GC=F` (COMEX gold future), `GLD` (gold ETF) and `SLV` (silver ETF). `XAUUSD=X` is intentionally excluded because this endpoint does not return it. `MarketDataClient` builds credential-free chart URLs that are safe to persist as provenance; `MarketDataRepository` caches three labeled rows in `market_data_cache` (a `cached` row is the local result of an explicit `live` fetch). These quotes are shown with their source alongside the FMP ETF quotes rather than silently merged.
+
+```dart
+final market = MarketDataRepository(db);
+final summary = await market.syncMarketData();
+final rows = await market.latest();
 ```
 
 ## Development
@@ -67,7 +77,7 @@ flutter build apk --release
 
 The app uses platform SQLite through `sqflite`. `package:sqlite3` is only needed by the FFI test database, so `pubspec.yaml` configures its build hook to use the operating system SQLite (`winsqlite3` on Windows, `sqlite` on Android) instead of downloading prebuilt binaries. `android/gradle.properties` disables Kotlin incremental compilation and runs the compiler in-process, which avoids cross-drive cache failures when the project and pub cache are on different drives.
 
-Both the general knowledge graph and wealth records are stored locally on the device. Network calls are limited to the explicit (or user-opted-in) IMF CPI import and the explicit, key-gated FMP context sync described above; both cache their results locally. Wasl does not add account synchronization or background feeds. AI explanations are local-only by default and consent-gated; see below. The UI does not independently verify user-provided source URLs or imported claims, and IMF/FMP figures are presented with their API source URL for the user to verify.
+Both the general knowledge graph and wealth records are stored locally on the device. Network calls are limited to the explicit (or user-opted-in) IMF CPI import, the explicit key-gated FMP context sync and the explicit key-free Yahoo market sync described above; all three cache their results locally. Wasl does not add account synchronization or background feeds. AI explanations are local-only by default and consent-gated; see below. The UI does not independently verify user-provided source URLs or imported claims, and IMF/FMP/Yahoo figures are presented with their API source URL for the user to verify. See [WASL_API_COVERAGE.md](WASL_API_COVERAGE.md) for the full endpoint list, key handling and blocked endpoints.
 
 ## Scoped AI layer (local-first)
 
@@ -77,9 +87,23 @@ The **Grounded explanation** screen (robot icon) implements phases 1–3 of `WAS
 - **Strict tools** — typed read-only calls (`getEquationSpec`, `computeEquation`, `searchKnowledge`, `latestObservation`). There is no arbitrary SQL; a `writeDatabase` request is explicitly refused until a separate, non-AI UI confirms it.
 - **Functional experts** — distinct instructions for the equation tutor, metric explainer and data quality reviewer. The coordinator itself never computes or invents a number or a fact; the engine remains the sole source of final answers.
 
-A hosted model is **disabled by default**. Consent is session-scoped and in memory only; the user sees the exact allowlisted payload before approving, can cancel, and can revoke consent and clear session data. The payload contains only the expert name, the user's question and the grounded claim/citation projection — never user history, raw database rows or API keys. A sanitizer additionally redacts credential-bearing fields and URL parameters.
+A hosted model is **disabled by default**. An optional OpenAI-compatible transport (`POST /v1/chat/completions`) becomes available only after the user enters a base URL, model and key through **Model settings**. The key is device-local only and is sent solely in an `Authorization: Bearer` header — never in a URL, body, log or provenance — and is scrubbed from errors. Consent is session-scoped and in memory only; the user sees the exact allowlisted payload before approving, can cancel, and can revoke consent and clear session data. The payload contains only the expert name, the user's question and the grounded claim/citation projection — never user history, raw database rows or API keys. A sanitizer redacts credential-bearing fields and URL parameters, and a numeric output guard rejects any hosted text that introduces a number absent from the payload; hosted text is labeled "generated wording only" and never replaces a deterministic answer.
 
-Privacy, cost, model/source licensing and the fine-tuning gate are recorded in [WASL_AI_REVIEW.md](WASL_AI_REVIEW.md). The repository is private and has no `LICENSE`; no open-source redistribution rights are granted.
+Privacy, cost, model/source licensing and the fine-tuning gate are recorded in [WASL_AI_REVIEW.md](WASL_AI_REVIEW.md). Those provider/owner decisions remain outstanding even though the transport is implemented. The repository is private and has no `LICENSE`; no open-source redistribution rights are granted.
+
+## Local API (offline, no network)
+
+`WaslLocalApi` (`lib/data/local_api.dart`) exposes the deterministic engines, grounded coordinator and read-only tools as a typed, in-process facade plus a JSON request/response envelope. It performs **no network** and never fetches — cached reads only. Use `describe()` for introspection; `writeDatabase` is always refused and there is no arbitrary SQL. See [WASL_LOCAL_API.md](WASL_LOCAL_API.md) for the full method and schema reference.
+
+```dart
+final api = WaslLocalApi(database: db);
+final response = await api.call(
+  LocalApiRequest(method: 'equation.compute', params: <String, Object?>{
+    'id': 'wealth.net_worth',
+    'inputs': <Object?>[],
+  }),
+);
+```
 
 ## Local research lab (`finance_lab/`)
 

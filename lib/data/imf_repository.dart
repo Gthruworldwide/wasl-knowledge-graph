@@ -18,7 +18,6 @@ const String _imfPreferencesPrefix = 'wasl.imf.cpi';
 const String _fmpPreferencesPrefix = 'wasl.fmp';
 const String _uuidNamespace = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 const Duration _autoRefreshInterval = Duration(hours: 24);
-const List<String> _fmpIndexSymbols = <String>['^GSPC', '^IXIC', '^DJI'];
 
 /// Orchestrates IMF CPI imports: fetch -> local cache -> wealth graph notes.
 class ImfRepository {
@@ -153,7 +152,10 @@ class ImfRepository {
       errors.add('FMP CPI: $error');
     }
 
-    for (final symbol in _fmpIndexSymbols) {
+    // The free key supports only single-symbol /stable/quote calls. Each
+    // symbol is fetched individually; batch/economic-calendar/treasury
+    // endpoints are documented as unavailable in WASL_API_COVERAGE.md.
+    for (final symbol in fmpAllQuoteSymbols) {
       try {
         final quote = await client.fetchQuote(symbol);
         if (quote == null) {
@@ -161,7 +163,7 @@ class ImfRepository {
           continue;
         }
         rows.add(FmpContextRow(
-          kind: FmpContextKind.indexQuote,
+          kind: fmpKindForSymbol(symbol),
           symbol: quote.symbol,
           label: quote.name,
           value: quote.price,

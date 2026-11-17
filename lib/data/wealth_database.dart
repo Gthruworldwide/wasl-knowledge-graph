@@ -16,7 +16,7 @@ class WealthDatabase {
     final opened = await _factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 5,
+        version: 6,
         onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _createSchema,
         onUpgrade: _upgradeSchema,
@@ -125,6 +125,7 @@ class WealthDatabase {
     );
     await _createImfObservations(db);
     await _createFmpMarketContext(db);
+    await _createMarketDataCache(db);
   }
 
   Future<void> _createImfObservations(Database db) async {
@@ -149,10 +150,11 @@ class WealthDatabase {
     );
   }
 
-  Future<void> _createFmpMarketContext(Database db) async {
-    await db.execute('''
-      CREATE TABLE fmp_market_context (
-        kind TEXT NOT NULL CHECK (kind IN ('CPI', 'INDEX_QUOTE')),
+  String _fmpContextTableSql(String tableName) => '''
+      CREATE TABLE $tableName (
+        kind TEXT NOT NULL CHECK (kind IN (
+          'CPI', 'INDEX_QUOTE', 'ASSET_QUOTE', 'CRYPTO_QUOTE'
+        )),
         symbol TEXT NOT NULL,
         label TEXT NOT NULL,
         value REAL NOT NULL,
@@ -162,10 +164,39 @@ class WealthDatabase {
         fetched_at TEXT NOT NULL,
         UNIQUE(kind, symbol, period)
       )
-    ''');
+    ''';
+
+  Future<void> _createFmpMarketContext(Database db) async {
+    await db.execute(_fmpContextTableSql('fmp_market_context'));
     await db.execute(
       'CREATE INDEX idx_fmp_context_kind_symbol '
       'ON fmp_market_context(kind, symbol)',
+    );
+  }
+
+  Future<void> _createMarketDataCache(Database db) async {
+    await db.execute('''
+      CREATE TABLE market_data_cache (
+        source TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN (
+          'GOLD_FUTURE', 'GOLD_ETF', 'SILVER_ETF'
+        )),
+        symbol TEXT NOT NULL,
+        label TEXT NOT NULL,
+        value REAL NOT NULL,
+        change_percent REAL,
+        period TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        provenance TEXT NOT NULL CHECK (provenance IN (
+          'live', 'cached', 'synthetic', 'manual'
+        )),
+        UNIQUE(source, kind, symbol, period)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_market_data_cache_kind '
+      'ON market_data_cache(kind, fetched_at)',
     );
   }
 
@@ -193,6 +224,27 @@ class WealthDatabase {
     }
     if (oldVersion < 5) {
       await _createFmpMarketContext(db);
+    }
+    if (oldVersion < 6) {
+      // Recreate the FMP table so the kind CHECK accepts asset/crypto quotes.
+      await db.execute(_fmpContextTableSql('fmp_market_context_v6'));
+      await db.execute('''
+        INSERT INTO fmp_market_context_v6
+          (kind, symbol, label, value, change_percent, period, source_url,
+           fetched_at)
+        SELECT kind, symbol, label, value, change_percent, period, source_url,
+               fetched_at
+        FROM fmp_market_context
+      ''');
+      await db.execute('DROP TABLE fmp_market_context');
+      await db.execute(
+        'ALTER TABLE fmp_market_context_v6 RENAME TO fmp_market_context',
+      );
+      await db.execute(
+        'CREATE INDEX idx_fmp_context_kind_symbol '
+        'ON fmp_market_context(kind, symbol)',
+      );
+      await _createMarketDataCache(db);
     }
   }
 }
