@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/knowledge_store.dart';
+import 'ai_explanation_page.dart';
 import 'equation_training_page.dart';
 import 'imf_indicators_page.dart';
 import 'wealth_home_page.dart';
@@ -152,6 +153,15 @@ class _KnowledgeHomePageState extends State<KnowledgeHomePage> {
               ),
             ),
             icon: const Icon(Icons.calculate_outlined),
+          ),
+          IconButton(
+            tooltip: isArabic ? 'الشرح الموثّق' : 'Grounded explanation',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => const AiExplanationPage(),
+              ),
+            ),
+            icon: const Icon(Icons.smart_toy_outlined),
           ),
           IconButton(
             tooltip: isArabic ? 'English' : 'العربية',

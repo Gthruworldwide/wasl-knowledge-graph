@@ -67,7 +67,19 @@ flutter build apk --release
 
 The app uses platform SQLite through `sqflite`. `package:sqlite3` is only needed by the FFI test database, so `pubspec.yaml` configures its build hook to use the operating system SQLite (`winsqlite3` on Windows, `sqlite` on Android) instead of downloading prebuilt binaries. `android/gradle.properties` disables Kotlin incremental compilation and runs the compiler in-process, which avoids cross-drive cache failures when the project and pub cache are on different drives.
 
-Both the general knowledge graph and wealth records are stored locally on the device. Network calls are limited to the explicit (or user-opted-in) IMF CPI import and the explicit, key-gated FMP context sync described above; both cache their results locally. Wasl does not add account synchronization, background feeds, or AI explanations. The UI does not independently verify user-provided source URLs or imported claims, and IMF/FMP figures are presented with their API source URL for the user to verify.
+Both the general knowledge graph and wealth records are stored locally on the device. Network calls are limited to the explicit (or user-opted-in) IMF CPI import and the explicit, key-gated FMP context sync described above; both cache their results locally. Wasl does not add account synchronization or background feeds. AI explanations are local-only by default and consent-gated; see below. The UI does not independently verify user-provided source URLs or imported claims, and IMF/FMP figures are presented with their API source URL for the user to verify.
+
+## Scoped AI layer (local-first)
+
+The **Grounded explanation** screen (robot icon) implements phases 1–3 of `WASL_FINANCIAL_AI_SPEC.md`:
+
+- **Grounded retrieval** — every answer is assembled only from the local equation catalog, the deterministic `EquationEngine`, locally stored knowledge entities and cached IMF observations. Each claim is labeled `sourcedValue`, `computedResult`, `estimate`, `generatedExplanation` or `unavailable`; missing evidence yields «غير متاح» with a reason, never an invented number.
+- **Strict tools** — typed read-only calls (`getEquationSpec`, `computeEquation`, `searchKnowledge`, `latestObservation`). There is no arbitrary SQL; a `writeDatabase` request is explicitly refused until a separate, non-AI UI confirms it.
+- **Functional experts** — distinct instructions for the equation tutor, metric explainer and data quality reviewer. The coordinator itself never computes or invents a number or a fact; the engine remains the sole source of final answers.
+
+A hosted model is **disabled by default**. Consent is session-scoped and in memory only; the user sees the exact allowlisted payload before approving, can cancel, and can revoke consent and clear session data. The payload contains only the expert name, the user's question and the grounded claim/citation projection — never user history, raw database rows or API keys. A sanitizer additionally redacts credential-bearing fields and URL parameters.
+
+Privacy, cost, model/source licensing and the fine-tuning gate are recorded in [WASL_AI_REVIEW.md](WASL_AI_REVIEW.md). The repository is private and has no `LICENSE`; no open-source redistribution rights are granted.
 
 ## Local research lab (`finance_lab/`)
 
